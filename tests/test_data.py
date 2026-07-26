@@ -74,3 +74,34 @@ def test_execution_uses_the_previous_book_row(tmp_path: Path) -> None:
     assert execution["spread_before"] == pytest.approx(2.0)
     assert execution["execution_price"] == pytest.approx(100.5)
     assert execution["trade_sign"] == 1
+
+
+def test_execution_ignores_optional_trailing_message_field(tmp_path: Path) -> None:
+    message = tmp_path / "message.csv"
+    orderbook = tmp_path / "orderbook.csv"
+    message.write_text(
+        "0,1,1,100,1000000,1,null\n"
+        "1,4,2,50,1005000,-1,null\n"
+    )
+    orderbook.write_text(
+        "1010000,200,990000,300\n"
+        "1020000,180,1000000,250\n"
+    )
+    day = DailyFiles(
+        symbol="TSLA",
+        date="2019-01-02",
+        start="34200000",
+        end="57600000",
+        levels=1,
+        message_path=message,
+        orderbook_path=orderbook,
+    )
+
+    execution = read_visible_executions(day).iloc[0]
+
+    assert execution["seconds"] == pytest.approx(1.0)
+    assert execution["event_type"] == 4
+    assert execution["order_id"] == 2
+    assert execution["size"] == 50
+    assert execution["execution_price"] == pytest.approx(100.5)
+    assert execution["trade_sign"] == 1

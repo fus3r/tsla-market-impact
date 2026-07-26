@@ -108,7 +108,12 @@ def _timestamps(date: str, seconds: pd.Series) -> pd.Series:
 
 
 def _read_aligned_best_book(day: DailyFiles) -> tuple[pd.DataFrame, pd.DataFrame]:
-    messages = pd.read_csv(day.message_path, header=None, names=MESSAGE_COLUMNS)
+    messages = pd.read_csv(
+        day.message_path,
+        header=None,
+        usecols=range(len(MESSAGE_COLUMNS)),
+        names=MESSAGE_COLUMNS,
+    )
     best_columns = orderbook_columns(day.levels)[:4]
     book = pd.read_csv(
         day.orderbook_path,

@@ -35,6 +35,8 @@ TSLA_2019-01-02_34200000_57600000_orderbook_2.csv
 
 Visible executions are event type 4. Fills with the same timestamp and initiating side are grouped into reconstructed market orders. The scaling calculation also uses hidden executions, event type 5, and infers their side from the execution price relative to the pre-event midpoint.
 
+Some delivered message files contain an optional seventh field such as `null` or a participant code. The Python reader consumes the six documented fields and ignores any trailing field.
+
 LOBSTER data are licensed. Raw CSV files and row-level derived tables must stay outside this repository.
 
 ## Running the analysis

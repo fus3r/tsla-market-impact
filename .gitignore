@@ -1,0 +1,17 @@
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Licensed LOBSTER files stay local.
+data/raw/
+data/processed/
+*.parquet
+*.feather
+
+tmp/

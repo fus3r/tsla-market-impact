@@ -1,0 +1,6 @@
+model,features,test_mse_cents_squared,test_rmse_cents,test_mae_cents,test_r_squared,test_sign_accuracy
+Ridge count transforms,"volume_imbalance, order_flow_imbalance, abs_volume_imbalance, signed_sqrt_volume_imbalance, signed_log_volume_imbalance, abs_order_flow_imbalance, signed_sqrt_order_flow_imbalance",106.888387846844,10.338684048119664,7.4744425691734655,0.3597591767009206,0.7847439077043568
+OLS count transforms,"volume_imbalance, order_flow_imbalance, abs_volume_imbalance, signed_sqrt_volume_imbalance, signed_log_volume_imbalance, abs_order_flow_imbalance, signed_sqrt_order_flow_imbalance",106.88839938281801,10.338684606023051,7.474443790233339,0.3597591076026617,0.7847439077043568
+OLS volume and count,"volume_imbalance, abs_volume_imbalance, signed_sqrt_volume_imbalance, signed_log_volume_imbalance, order_flow_imbalance",106.95685211586228,10.341994590786744,7.478067127997642,0.3593490889369847,0.7848643981002681
+OLS volume transforms,"volume_imbalance, abs_volume_imbalance, signed_sqrt_volume_imbalance, signed_log_volume_imbalance",117.1836143540907,10.825138075520824,7.792725973661798,0.29809275598088214,0.7694416274236141
+OLS signed volume,volume_imbalance,147.22861433389747,12.133779886494459,8.637637514325977,0.11812900210094868,0.7699135481409336

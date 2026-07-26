@@ -1,0 +1,14 @@
+quantity,value
+visible_market_orders,4573957.0
+market_orders_per_session_median,16034.5
+market_orders_per_session_p10,10752.1
+market_orders_per_session_p90,29642.300000000003
+order_size_shares_median,54.0
+order_size_shares_p90,194.0
+order_size_shares_p99,700.0
+spread_cents_median,6.999999999999318
+spread_cents_p90,15.00000000000341
+buyer_initiated_fraction,0.49744520991342944
+ten_order_windows,457263.0
+ten_order_impact_cents_standard_deviation,12.46569848955829
+ten_order_zero_impact_fraction,0.030059287543492477

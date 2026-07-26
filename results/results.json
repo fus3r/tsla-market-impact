@@ -1,0 +1,205 @@
+{
+  "scope": {
+    "symbol": "TSLA",
+    "year": 2019,
+    "sessions": 252,
+    "first_session": "2019-01-02",
+    "last_session": "2019-12-31",
+    "timestamp_aggregated_visible_market_orders": 4573957,
+    "scaling_transactions_type_4_5": 5879277,
+    "sample_summary": {
+      "visible_market_orders": 4573957,
+      "market_orders_per_session_median": 16034.5,
+      "market_orders_per_session_p10": 10752.1,
+      "market_orders_per_session_p90": 29642.300000000003,
+      "order_size_shares_median": 54.0,
+      "order_size_shares_p90": 194.0,
+      "order_size_shares_p99": 700.0,
+      "spread_cents_median": 6.999999999999318,
+      "spread_cents_p90": 15.00000000000341,
+      "buyer_initiated_fraction": 0.49744520991342944,
+      "ten_order_windows": 457263,
+      "ten_order_impact_cents_standard_deviation": 12.46569848955829,
+      "ten_order_zero_impact_fraction": 0.030059287543492477
+    }
+  },
+  "prediction": {
+    "horizon_market_orders": 10,
+    "train_first_date": "2019-01-02",
+    "train_last_date": "2019-10-17",
+    "test_first_date": "2019-10-18",
+    "test_last_date": "2019-12-31",
+    "train_observations": 354768,
+    "test_observations": 102495,
+    "baseline": {
+      "name": "OLS signed volume",
+      "test_mse_cents_squared": 147.22861433389747,
+      "test_rmse_cents": 12.133779886494459,
+      "test_mae_cents": 8.637637514325977,
+      "test_r_squared": 0.11812900210094868,
+      "test_sign_accuracy": 0.7699135481409336
+    },
+    "augmented": {
+      "name": "OLS count transforms",
+      "test_mse_cents_squared": 106.88839938281801,
+      "test_rmse_cents": 10.338684606023051,
+      "test_mae_cents": 7.474443790233339,
+      "test_r_squared": 0.3597591076026617,
+      "test_sign_accuracy": 0.7847439077043568
+    },
+    "delta_r_squared": 0.24163010550171304,
+    "relative_mse_reduction": 0.2739971107762552,
+    "day_cluster_bootstrap": {
+      "clusters": 51,
+      "replicates": 10000,
+      "delta_r_squared_lower_95": 0.23166852190597864,
+      "delta_r_squared_median": 0.24151947262547713,
+      "delta_r_squared_upper_95": 0.25249944294719434,
+      "relative_mse_reduction_lower_95": 0.2646544685736429,
+      "relative_mse_reduction_median": 0.273943410174938,
+      "relative_mse_reduction_upper_95": 0.2843087295190864,
+      "probability_delta_r_squared_nonpositive": 0.0
+    },
+    "feature_ablation": [
+      {
+        "name": "OLS count transforms",
+        "test_mse_cents_squared": 106.88839938281801,
+        "test_rmse_cents": 10.338684606023051,
+        "test_mae_cents": 7.474443790233339,
+        "test_r_squared": 0.3597591076026617,
+        "test_sign_accuracy": 0.7847439077043568
+      },
+      {
+        "name": "OLS volume and count",
+        "test_mse_cents_squared": 106.95685211586228,
+        "test_rmse_cents": 10.341994590786744,
+        "test_mae_cents": 7.478067127997642,
+        "test_r_squared": 0.3593490889369847,
+        "test_sign_accuracy": 0.7848643981002681
+      },
+      {
+        "name": "OLS volume transforms",
+        "test_mse_cents_squared": 117.1836143540907,
+        "test_rmse_cents": 10.825138075520824,
+        "test_mae_cents": 7.792725973661798,
+        "test_r_squared": 0.29809275598088214,
+        "test_sign_accuracy": 0.7694416274236141
+      },
+      {
+        "name": "OLS signed volume",
+        "test_mse_cents_squared": 147.22861433389747,
+        "test_rmse_cents": 12.133779886494459,
+        "test_mae_cents": 8.637637514325977,
+        "test_r_squared": 0.11812900210094868,
+        "test_sign_accuracy": 0.7699135481409336
+      }
+    ],
+    "basis_point_robustness": {
+      "baseline_r_squared": 0.11400138278292082,
+      "augmented_r_squared": 0.30899512879722635,
+      "relative_mse_reduction": 0.2200835782642423
+    },
+    "trimmed_reference_protocol": {
+      "bounds": {
+        "volume_imbalance": [
+          -3548.5406118479577,
+          3543.560557277083
+        ],
+        "impact_cents": [
+          -36.97972195775072,
+          37.006277340423345
+        ]
+      },
+      "train_observations": 345800,
+      "test_observations": 100133,
+      "baseline": {
+        "name": "OLS signed volume",
+        "test_mse_cents_squared": 103.53120880670043,
+        "test_rmse_cents": 10.175028688249505,
+        "test_mae_cents": 7.663787010760676,
+        "test_r_squared": 0.24093192092497306,
+        "test_sign_accuracy": 0.766362057091167
+      },
+      "augmented": {
+        "name": "OLS count transforms",
+        "test_mse_cents_squared": 84.21160615672903,
+        "test_rmse_cents": 9.176688191102988,
+        "test_mae_cents": 6.970488003004037,
+        "test_r_squared": 0.38257900339444295,
+        "test_sign_accuracy": 0.7824183053565371
+      },
+      "relative_mse_reduction": 0.18660655924574754
+    },
+    "horizon_robustness": [
+      {
+        "horizon": 5,
+        "baseline_r_squared": 0.07411893196427444,
+        "augmented_r_squared": 0.28204972901179515,
+        "relative_mse_reduction": 0.22457614074413457
+      },
+      {
+        "horizon": 10,
+        "baseline_r_squared": 0.11812900210094868,
+        "augmented_r_squared": 0.3597591076026617,
+        "relative_mse_reduction": 0.2739971107762552
+      },
+      {
+        "horizon": 20,
+        "baseline_r_squared": 0.17190349622895162,
+        "augmented_r_squared": 0.42606815621471517,
+        "relative_mse_reduction": 0.3069263773344403
+      },
+      {
+        "horizon": 50,
+        "baseline_r_squared": 0.2217025191329216,
+        "augmented_r_squared": 0.4715545890867239,
+        "relative_mse_reduction": 0.32102387081537176
+      },
+      {
+        "horizon": 100,
+        "baseline_r_squared": 0.2690690588457736,
+        "augmented_r_squared": 0.4823832821860593,
+        "relative_mse_reduction": 0.29183909358582816
+      }
+    ]
+  },
+  "scaling": {
+    "horizons": 28,
+    "minimum_horizon": 10,
+    "maximum_horizon": 5000,
+    "shape": {
+      "alpha": 0.6756336714711664,
+      "beta": 2.034550488012723,
+      "success": true,
+      "cost": 2.7235771971056977e-07
+    },
+    "width_scale": {
+      "prefactor": 233.90114365732737,
+      "exponent": 0.9763283663866096,
+      "standard_error": 0.011633230903244127,
+      "r_squared": 0.9963222512276899,
+      "log_residual_standard_deviation": 0.1142860979538578,
+      "observations": 28
+    },
+    "height_scale": {
+      "prefactor": 0.000608350334220279,
+      "exponent": 0.6563829234636747,
+      "standard_error": 0.0060915197540193,
+      "r_squared": 0.9977657143793538,
+      "log_residual_standard_deviation": 0.05984373808840748,
+      "observations": 28
+    },
+    "sign_hurst": {
+      "prefactor": 1.2448706129905664,
+      "exponent": 0.6933362671340977,
+      "standard_error": 0.0028451497113932095,
+      "r_squared": 0.9995623714381148,
+      "log_residual_standard_deviation": 0.027951053435980356,
+      "observations": 28
+    }
+  },
+  "liquidity": {
+    "kyle_lambda_t10_cents_per_share": 0.018366742078481133,
+    "kyle_decay_exponent": 0.31324833297593635
+  }
+}

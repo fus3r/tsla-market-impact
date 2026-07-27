@@ -9,6 +9,7 @@
 
 #include "tsla_lob/analysis_policy.hpp"
 #include "tsla_lob/csv_reader.hpp"
+#include "tsla_lob/replay.hpp"
 #include "tsla_lob/session_integrity.hpp"
 
 namespace {
@@ -47,6 +48,34 @@ void check(bool condition, const char* expression, int line) {
 }
 
 #define CHECK(expression) check((expression), #expression, __LINE__)
+
+tsla_lob::BookSnapshot book(
+    std::int32_t ask1,
+    std::int32_t ask1_size,
+    std::int32_t bid1,
+    std::int32_t bid1_size,
+    std::int32_t ask2,
+    std::int32_t ask2_size,
+    std::int32_t bid2,
+    std::int32_t bid2_size) {
+  return {
+      {{{ask1, ask1_size}, {ask2, ask2_size}}},
+      {{{bid1, bid1_size}, {bid2, bid2_size}}},
+  };
+}
+
+tsla_lob::Message message(
+    tsla_lob::EventType event_type,
+    std::int8_t direction,
+    std::int32_t price,
+    std::int32_t size) {
+  tsla_lob::Message value;
+  value.event_type = event_type;
+  value.direction = direction;
+  value.price = price;
+  value.size = size;
+  return value;
+}
 
 template <typename Callback>
 void expect_parse_error(Callback&& callback) {
@@ -197,6 +226,116 @@ void test_analysis_policy(const std::filesystem::path& policy_path) {
   });
 }
 
+void test_level_two_transition_contract() {
+  const tsla_lob::BookSnapshot initial =
+      book(101, 20, 99, 30, 102, 40, 98, 50);
+
+  struct TransitionCase {
+    const char* name;
+    tsla_lob::BookSnapshot previous;
+    tsla_lob::Message event;
+    tsla_lob::BookSnapshot current;
+    tsla_lob::TransitionStatus expected;
+  };
+  const std::array<TransitionCase, 10> cases = {{
+      {
+          "submission",
+          initial,
+          message(tsla_lob::EventType::submission, -1, 100, 10),
+          book(100, 10, 99, 30, 101, 20, 98, 50),
+          tsla_lob::TransitionStatus::exact,
+      },
+      {
+          "partial cancellation",
+          initial,
+          message(tsla_lob::EventType::partial_cancel, -1, 101, 5),
+          book(101, 15, 99, 30, 102, 40, 98, 50),
+          tsla_lob::TransitionStatus::exact,
+      },
+      {
+          "deletion",
+          initial,
+          message(tsla_lob::EventType::deletion, -1, 102, 10),
+          book(101, 20, 99, 30, 102, 30, 98, 50),
+          tsla_lob::TransitionStatus::exact,
+      },
+      {
+          "visible execution",
+          initial,
+          message(tsla_lob::EventType::visible_execution, 1, 99, 10),
+          book(101, 20, 99, 20, 102, 40, 98, 50),
+          tsla_lob::TransitionStatus::exact,
+      },
+      {
+          "level depletion",
+          initial,
+          message(tsla_lob::EventType::visible_execution, -1, 101, 20),
+          book(102, 40, 99, 30, 103, 60, 98, 50),
+          tsla_lob::TransitionStatus::depth_censored,
+      },
+      {
+          "hidden execution",
+          initial,
+          message(tsla_lob::EventType::hidden_execution, -1, 101, 5),
+          initial,
+          tsla_lob::TransitionStatus::exact,
+      },
+      {
+          "hidden execution changed the displayed book",
+          initial,
+          message(tsla_lob::EventType::hidden_execution, -1, 101, 5),
+          book(101, 15, 99, 30, 102, 40, 98, 50),
+          tsla_lob::TransitionStatus::mismatch,
+      },
+      {
+          "depletion changed the surviving prefix",
+          initial,
+          message(tsla_lob::EventType::deletion, -1, 101, 20),
+          book(103, 60, 99, 30, 104, 70, 98, 50),
+          tsla_lob::TransitionStatus::mismatch,
+      },
+      {
+          "unsupported direction",
+          initial,
+          message(tsla_lob::EventType::submission, 0, 100, 10),
+          initial,
+          tsla_lob::TransitionStatus::unsupported,
+      },
+      {
+          "unsupported event type",
+          initial,
+          message(static_cast<tsla_lob::EventType>(8), -1, 101, 5),
+          initial,
+          tsla_lob::TransitionStatus::unsupported,
+      },
+  }};
+
+  for (const TransitionCase& input : cases) {
+    if (tsla_lob::audit_transition(
+            input.previous,
+            input.event,
+            input.current) != input.expected) {
+      throw std::runtime_error(
+          "unexpected transition status for " + std::string(input.name));
+    }
+  }
+}
+
+void test_snapshot_invariants() {
+  CHECK(tsla_lob::valid_snapshot(
+      book(101, 20, 99, 30, 102, 40, 98, 50)));
+
+  const std::array<tsla_lob::BookSnapshot, 4> invalid = {{
+      book(101, 0, 99, 30, 102, 40, 98, 50),
+      book(99, 20, 99, 30, 102, 40, 98, 50),
+      book(102, 20, 99, 30, 101, 40, 98, 50),
+      book(101, 20, 98, 30, 102, 40, 99, 50),
+  }};
+  for (const tsla_lob::BookSnapshot& snapshot : invalid) {
+    CHECK(!tsla_lob::valid_snapshot(snapshot));
+  }
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -208,7 +347,10 @@ int main(int argc, char* argv[]) {
     test_paired_files(argv[1]);
     test_rejected_inputs();
     test_analysis_policy(argv[2]);
-    std::cout << "all C++ decoding and source-integrity tests passed\n";
+    test_level_two_transition_contract();
+    test_snapshot_invariants();
+    std::cout
+        << "all C++ decoding, replay, and source-integrity tests passed\n";
     return 0;
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

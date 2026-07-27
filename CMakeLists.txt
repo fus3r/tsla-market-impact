@@ -6,6 +6,7 @@ add_library(
   tsla_lob
   cpp/src/analysis_policy.cpp
   cpp/src/csv_reader.cpp
+  cpp/src/replay.cpp
   cpp/src/session_integrity.cpp
 )
 target_include_directories(tsla_lob PUBLIC cpp/include)

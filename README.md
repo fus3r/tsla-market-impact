@@ -57,7 +57,8 @@ does not claim complete 2019 coverage or external replication.
 ## Files
 
 - `analysis-policy.conf` is the shared Python/C++ source and calendar policy.
-- `cpp/` contains the fixed-width decoder and source-integrity checks.
+- `cpp/` contains the fixed-width decoder, source-integrity checks, and the
+  [finite-depth transition contract](cpp/README.md).
 - `src/tsla_market_impact/` contains the LOBSTER reconstruction and analysis code.
 - `results/` contains aggregate tables, including the 252-row coverage audit.
   Licensed rows are not included.

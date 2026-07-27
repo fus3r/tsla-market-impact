@@ -1,4 +1,4 @@
-"""Finite-size scaling replication for aggregate market impact."""
+"""Finite-size scaling analysis for aggregate market impact."""
 
 from __future__ import annotations
 
@@ -211,7 +211,9 @@ def fit_scaling_laws(scales: pd.DataFrame) -> dict[str, dict[str, float]]:
     }
 
 
-def fit_hurst_statistics(windows: pd.DataFrame) -> dict[str, dict[str, float]]:
+def fit_variance_scaling_statistics(
+    windows: pd.DataFrame,
+) -> dict[str, dict[str, float]]:
     """Fit standard-deviation scaling for volume, returns, and order signs."""
 
     required_columns(windows, ["horizon", "Q", "E", "impact_log"])

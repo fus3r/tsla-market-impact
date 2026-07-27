@@ -6,8 +6,13 @@ import argparse
 import json
 from pathlib import Path
 
-from .data import prepare_scaling_transactions, prepare_visible_market_orders
+from .data import (
+    prepare_scaling_transactions,
+    prepare_visible_market_orders,
+    run_session_coverage_audit,
+)
 from .pipeline import run_analysis
+from .policy import DEFAULT_ANALYSIS_POLICY, load_analysis_policy
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -24,22 +29,44 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--symbol", default="TSLA")
         command.add_argument("--year", type=int, default=2019)
 
+    coverage = subparsers.add_parser("audit-session-coverage")
+    coverage.add_argument("--raw-dir", type=Path, required=True)
+    coverage.add_argument("--results", type=Path, default=Path("results"))
+    coverage.add_argument("--symbol", default="TSLA")
+    coverage.add_argument("--year", type=int, default=2019)
+
     analyze = subparsers.add_parser("analyze")
     analyze.add_argument("--visible", type=Path, required=True)
     analyze.add_argument("--scaling", type=Path, required=True)
     analyze.add_argument("--results", type=Path, default=Path("results"))
     analyze.add_argument("--figures", type=Path, default=Path("report/figures"))
+    for command in subparsers.choices.values():
+        command.add_argument(
+            "--analysis-policy",
+            type=Path,
+            default=DEFAULT_ANALYSIS_POLICY,
+        )
     return parser
 
 
 def main() -> None:
     args = _parser().parse_args()
-    if args.command == "prepare-visible":
+    policy = load_analysis_policy(args.analysis_policy)
+    if args.command == "audit-session-coverage":
+        result = run_session_coverage_audit(
+            args.raw_dir,
+            args.results,
+            symbol=args.symbol,
+            year=args.year,
+            analysis_policy=policy,
+        )
+    elif args.command == "prepare-visible":
         result = prepare_visible_market_orders(
             args.raw_dir,
             args.output,
             symbol=args.symbol,
             year=args.year,
+            analysis_policy=policy,
         )
     elif args.command == "prepare-scaling":
         result = prepare_scaling_transactions(
@@ -47,6 +74,7 @@ def main() -> None:
             args.output,
             symbol=args.symbol,
             year=args.year,
+            analysis_policy=policy,
         )
     elif args.command == "analyze":
         result = run_analysis(
@@ -54,6 +82,7 @@ def main() -> None:
             args.scaling,
             args.results,
             args.figures,
+            test_start_date=policy.test_start,
         )
     print(json.dumps(result, indent=2))
 

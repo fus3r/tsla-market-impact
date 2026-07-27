@@ -28,6 +28,13 @@ def test_temporal_split_holds_out_latest_dates() -> None:
     assert test["date"].min() == "2019-01-09"
     assert set(train["date"]).isdisjoint(test["date"])
 
+    fixed_train, fixed_test = temporal_train_test_split(
+        data,
+        test_start_date="2019-01-08",
+    )
+    assert fixed_train["date"].max() == "2019-01-07"
+    assert fixed_test["date"].min() == "2019-01-08"
+
 
 def test_signed_count_adds_holdout_signal() -> None:
     random = np.random.default_rng(12)

@@ -39,8 +39,8 @@ from .scaling import (
     DEFAULT_HORIZONS,
     collapse_curve,
     compute_scaling_windows,
-    fit_hurst_statistics,
     fit_scaling_laws,
+    fit_variance_scaling_statistics,
     fit_volume_curve_scales,
     quantile_curve,
 )
@@ -118,14 +118,21 @@ def _monthly_scores(
     return pd.DataFrame(rows)
 
 
-def _horizon_scores(windows: pd.DataFrame) -> pd.DataFrame:
+def _horizon_scores(
+    windows: pd.DataFrame,
+    test_start_date: str | None = None,
+) -> pd.DataFrame:
     specifications = _selected_specifications(
         {BASELINE_MODEL, VOLUME_MODEL, COUNT_MODEL, AUGMENTED_MODEL}
     )
     frames: list[pd.DataFrame] = []
     for horizon in sorted(windows["horizon"].unique()):
         data = prepare_impact_dataset(windows, horizon=int(horizon))
-        train, test = temporal_train_test_split(data, test_date_fraction=0.20)
+        train, test = temporal_train_test_split(
+            data,
+            test_date_fraction=0.20,
+            test_start_date=test_start_date,
+        )
         metrics, _ = evaluate_impact_models(train, test, specifications)
         metrics.insert(0, "horizon", int(horizon))
         metrics.insert(1, "train_observations", len(train))
@@ -161,6 +168,7 @@ def run_analysis(
     scaling_path: Path | str,
     results_dir: Path | str,
     figures_dir: Path | str,
+    test_start_date: str | None = None,
 ) -> dict[str, object]:
     """Run the study and write aggregate tables and report figures."""
 
@@ -188,7 +196,11 @@ def run_analysis(
     aggregate_curve.to_csv(output / "aggregate_impact_curve.csv", index=False)
 
     impact_data = prepare_impact_dataset(windows, horizon=10)
-    train, test = temporal_train_test_split(impact_data, test_date_fraction=0.20)
+    train, test = temporal_train_test_split(
+        impact_data,
+        test_date_fraction=0.20,
+        test_start_date=test_start_date,
+    )
     model_metrics, fitted = evaluate_impact_models(train, test)
     metric_columns = [
         "model",
@@ -206,6 +218,7 @@ def run_analysis(
     basis_point_train, basis_point_test = temporal_train_test_split(
         basis_point_data,
         test_date_fraction=0.20,
+        test_start_date=test_start_date,
     )
     basis_point_metrics, _ = evaluate_impact_models(
         basis_point_train,
@@ -284,7 +297,7 @@ def run_analysis(
     trimmed_metrics, _ = evaluate_impact_models(trimmed_train, trimmed_test)
     trimmed_metrics[metric_columns].to_csv(output / "model_metrics_trimmed.csv", index=False)
 
-    horizon_metrics = _horizon_scores(windows)
+    horizon_metrics = _horizon_scores(windows, test_start_date=test_start_date)
     horizon_metrics.to_csv(output / "horizon_robustness.csv", index=False)
     walk_forward = evaluate_expanding_splits(
         impact_data,
@@ -302,7 +315,7 @@ def run_analysis(
     scaling_curve = quantile_curve(scaling_windows, "Q", "impact_log", quantiles=31)
     scales, shape = fit_volume_curve_scales(scaling_curve)
     scale_fits = fit_scaling_laws(scales)
-    hurst_fits = fit_hurst_statistics(scaling_windows)
+    variance_scaling_fits = fit_variance_scaling_statistics(scaling_windows)
     collapsed = collapse_curve(scaling_curve, scales)
     scales.to_csv(output / "scaling_scales.csv", index=False)
     scaling_curve.to_csv(output / "scaling_curve.csv", index=False)
@@ -416,7 +429,7 @@ def run_analysis(
             "shape": shape,
             "width_scale": scale_fits["width"],
             "height_scale": scale_fits["height"],
-            "sign_hurst": hurst_fits["sign"],
+            "sign_variance_scaling": variance_scaling_fits["sign"],
         },
         "liquidity": {
             "kyle_lambda_t10_cents_per_share": _number(

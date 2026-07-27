@@ -2,7 +2,12 @@ cmake_minimum_required(VERSION 3.22)
 
 project(tsla_market_impact_cpp VERSION 0.1.0 LANGUAGES CXX)
 
-add_library(tsla_lob cpp/src/csv_reader.cpp)
+add_library(
+  tsla_lob
+  cpp/src/analysis_policy.cpp
+  cpp/src/csv_reader.cpp
+  cpp/src/session_integrity.cpp
+)
 target_include_directories(tsla_lob PUBLIC cpp/include)
 target_compile_features(tsla_lob PUBLIC cxx_std_20)
 
@@ -34,5 +39,6 @@ if(BUILD_TESTING)
     COMMAND
       tsla_lob_csv_reader_test
       ${CMAKE_CURRENT_SOURCE_DIR}/cpp/tests/fixtures
+      ${CMAKE_CURRENT_SOURCE_DIR}/analysis-policy.conf
   )
 endif()

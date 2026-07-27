@@ -1,28 +1,69 @@
 # Signed order count in aggregate price impact
 
-This repository contains my analysis of reconstructed TSLA market orders from 252 NASDAQ sessions in 2019. The question is simple: after observing signed share volume over a short window, does the number of buyer and seller initiated orders add information about the mid-price change?
+This repository contains my analysis of reconstructed TSLA market orders from
+249 included NASDAQ sessions in 2019. The question is simple: after observing
+signed share volume over a short window, does the number of buyer- and
+seller-initiated orders add information about the mid-price change?
 
-It does in this sample. The test set is the final 20% of trading dates, with no trimming of the response.
+It does in this sample. The fixed test period begins on 18 October, after 198
+included training dates, and contains 51 dates with no trimming of the response.
 
 | Model | Holdout R² | Holdout MSE |
 |---|---:|---:|
 | Signed volume | 0.118 | 147.23 |
-| Nonlinear volume terms | 0.298 | 117.18 |
-| Volume terms and raw signed count | 0.359 | 106.96 |
-| Volume and count transforms | 0.360 | 106.89 |
+| Nonlinear volume terms | 0.298 | 117.16 |
+| Volume terms and raw signed count | 0.359 | 106.93 |
+| Volume and count transforms | 0.360 | 106.86 |
 
-The last model cuts MSE by 27.4% relative to signed volume. A bootstrap over complete test dates gives an interval of 26.5% to 28.4% for that reduction. Both the order-flow variables and the price change are measured inside the same window, so this is a conditional impact model rather than a pre-trade forecast.
+The last model cuts MSE by 27.4% relative to signed volume. A bootstrap over
+complete test dates gives an interval of 26.5% to 28.5% for that reduction.
+Both the order-flow variables and the price change are measured inside the same
+window, so this is a conditional impact model rather than a pre-trade forecast.
 
-The scaling analysis is separate. It reproduces the curve-collapse construction of Patzelt and Bouchaud on TSLA 2019. The reported values 0.9963 and 0.9978 are in-sample fits of estimated scale parameters, not prediction scores.
+The scaling analysis is separate. It applies the curve-collapse construction of
+Patzelt and Bouchaud to this included TSLA 2019 sample. The reported values
+0.9958 and 0.9975 are in-sample fits of estimated scale parameters, not
+prediction scores or an external replication.
 
 [Read the report](report/tsla-market-impact.pdf).
 
+## Source-data status
+
+The source delivery contains 252 message/order-book pairs. A schedule-aware
+audit finds that the pairs for 9 January, 8 March, and 18 September stop before
+the Nasdaq close. The original supervised-project access has ended and
+replacement files are unavailable, so
+[`analysis-policy.conf`](analysis-policy.conf) declares exactly those three
+dates as source exclusions.
+
+Python and C++ consume the same policy. The Python annual gate requires 252
+delivered pairs, 249 included sessions, three declared exclusions, and no
+unexplained coverage failure; the C++ validator enforces the same close,
+exclusion, and universe-count rules for decoded sessions. There is no generic
+skip-incomplete mode. The official 13:00 closes on 3 July, 29 November, and
+24 December pass the 60-second coverage threshold; rows after 13:00 are
+excluded from preparation.
+
+The calendar boundaries remain fixed rather than being recalculated after the
+exclusions: development ends on 6 August, selection runs from 7 August through
+17 October, and test starts on 18 October. This preserves 148/50/51 nested dates
+and the 198/51 outer train/test split.
+
+All committed numerical outputs were rebuilt on the 249-session universe. The
+aggregate audit is in
+[`results/session_coverage.csv`](results/session_coverage.csv). This repository
+does not claim complete 2019 coverage or external replication.
+
 ## Files
 
+- `analysis-policy.conf` is the shared Python/C++ source and calendar policy.
+- `cpp/` contains the fixed-width decoder and source-integrity checks.
 - `src/tsla_market_impact/` contains the LOBSTER reconstruction and analysis code.
-- `results/` contains aggregate tables. Licensed rows are not included.
+- `results/` contains aggregate tables, including the 252-row coverage audit.
+  Licensed rows are not included.
 - `report/` contains the LaTeX source, figures, references, and compiled PDF.
-- `tests/` checks the data alignment, event-time windows, chronological splits, bootstrap, and scaling fits with synthetic data.
+- `tests/` checks source integrity, data alignment, event-time windows,
+  chronological splits, bootstrap, and scaling fits with synthetic data.
 
 ## Data
 
@@ -47,7 +88,15 @@ source .venv/bin/activate
 python -m pip install -e '.[dev]'
 ```
 
-Build the two annual transaction tables:
+Audit the delivered sessions before building either annual table:
+
+```bash
+tsla-impact audit-session-coverage \
+  --raw-dir data/raw/TSLA
+```
+
+The command writes only the aggregate `results/session_coverage.csv` artifact
+after the exact 252/249/3 gate passes. Build the two annual transaction tables:
 
 ```bash
 tsla-impact prepare-visible \
@@ -78,6 +127,14 @@ The Python tests do not need the licensed data:
 ```bash
 ruff check .
 pytest
+```
+
+The C++ source-policy and decoder checks use only synthetic fixtures:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build --output-on-failure
 ```
 
 ## Origin and credit

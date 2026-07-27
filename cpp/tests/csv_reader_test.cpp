@@ -7,7 +7,9 @@
 #include <string_view>
 #include <type_traits>
 
+#include "tsla_lob/analysis_policy.hpp"
 #include "tsla_lob/csv_reader.hpp"
+#include "tsla_lob/session_integrity.hpp"
 
 namespace {
 
@@ -54,6 +56,16 @@ void expect_parse_error(Callback&& callback) {
     return;
   }
   throw std::runtime_error("expected ParseError");
+}
+
+template <typename Callback>
+void expect_runtime_error(Callback&& callback) {
+  try {
+    callback();
+  } catch (const std::runtime_error&) {
+    return;
+  }
+  throw std::runtime_error("expected runtime_error");
 }
 
 void test_paired_files(const std::filesystem::path& fixtures) {
@@ -119,16 +131,84 @@ void test_rejected_inputs() {
   }
 }
 
+void test_analysis_policy(const std::filesystem::path& policy_path) {
+  const tsla_lob::AnalysisPolicy policy =
+      tsla_lob::load_analysis_policy(policy_path);
+  tsla_lob::validate_analysis_scope(policy, "TSLA", 2019);
+
+  CHECK(policy.expected_delivered_sessions == 252);
+  CHECK(policy.expected_included_sessions == 249);
+  CHECK(policy.source_exclusions.size() == 3);
+  CHECK(policy.source_exclusions.contains("2019-01-09"));
+  CHECK(policy.source_exclusions.contains("2019-03-08"));
+  CHECK(policy.source_exclusions.contains("2019-09-18"));
+  CHECK(policy.development_end == "2019-08-06");
+  CHECK(policy.selection_start == "2019-08-07");
+  CHECK(policy.selection_end == "2019-10-17");
+  CHECK(policy.test_start == "2019-10-18");
+
+  std::array<tsla_lob::EventRecord, 2> half_day{};
+  half_day[0].message.timestamp_ns = 46'799'000'000'000ULL;
+  half_day[1].message.timestamp_ns = 46'801'000'000'000ULL;
+  const tsla_lob::SessionCoverage half_day_coverage =
+      tsla_lob::validate_session_source(
+          "2019-07-03",
+          57'600'000ULL,
+          half_day,
+          policy);
+  CHECK(half_day_coverage.scheduled_close_ns == 46'800'000'000'000ULL);
+  CHECK(half_day_coverage.end_gap_ns == 1'000'000'000ULL);
+  CHECK(half_day_coverage.included_events == 1);
+  CHECK(half_day_coverage.events_after_scheduled_close == 1);
+  CHECK(
+      half_day_coverage.status ==
+      tsla_lob::SessionSourceStatus::included);
+
+  std::array<tsla_lob::EventRecord, 1> incomplete{};
+  incomplete[0].message.timestamp_ns = 34'200'000'000'000ULL;
+  const tsla_lob::SessionCoverage excluded =
+      tsla_lob::validate_session_source(
+          "2019-01-09",
+          57'600'000ULL,
+          incomplete,
+          policy);
+  CHECK(
+      excluded.status ==
+      tsla_lob::SessionSourceStatus::declared_source_exclusion);
+
+  expect_runtime_error([&] {
+    (void)tsla_lob::validate_session_source(
+        "2019-01-02",
+        57'600'000ULL,
+        incomplete,
+        policy);
+  });
+  tsla_lob::validate_analysis_universe(
+      252,
+      249,
+      policy.source_exclusions,
+      policy);
+  expect_runtime_error([&] {
+    tsla_lob::validate_analysis_universe(
+        252,
+        249,
+        {"2019-01-09"},
+        policy);
+  });
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
   try {
-    if (argc != 2) {
-      throw std::runtime_error("expected fixture directory argument");
+    if (argc != 3) {
+      throw std::runtime_error(
+          "expected fixture directory and analysis policy arguments");
     }
     test_paired_files(argv[1]);
     test_rejected_inputs();
-    std::cout << "all C++ decoding tests passed\n";
+    test_analysis_policy(argv[2]);
+    std::cout << "all C++ decoding and source-integrity tests passed\n";
     return 0;
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

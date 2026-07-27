@@ -13,6 +13,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 from .data import required_columns
+from .policy import split_index_for_test_start
 
 BASE_FEATURES = ["volume_imbalance"]
 VOLUME_FEATURES = [
@@ -80,17 +81,21 @@ def prepare_impact_dataset(
 def temporal_train_test_split(
     data: pd.DataFrame,
     test_date_fraction: float = 0.20,
+    test_start_date: str | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Hold out the final fraction of distinct dates."""
+    """Hold out dates from a fixed boundary, or a final fraction when omitted."""
 
-    if not 0 < test_date_fraction < 1:
+    if test_start_date is None and not 0 < test_date_fraction < 1:
         raise ValueError("test_date_fraction must lie between zero and one")
     required_columns(data, ["date"])
     dates = np.array(sorted(data["date"].unique()))
     if len(dates) < 2:
         raise ValueError("At least two distinct dates are required")
-    split = int(np.floor((1 - test_date_fraction) * len(dates)))
-    split = min(max(split, 1), len(dates) - 1)
+    if test_start_date is None:
+        split = int(np.floor((1 - test_date_fraction) * len(dates)))
+        split = min(max(split, 1), len(dates) - 1)
+    else:
+        split = split_index_for_test_start(dates.astype(str).tolist(), test_start_date)
     train_dates = set(dates[:split])
     train = data.loc[data["date"].isin(train_dates)].copy()
     test = data.loc[~data["date"].isin(train_dates)].copy()

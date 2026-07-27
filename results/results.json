@@ -2,25 +2,25 @@
   "scope": {
     "symbol": "TSLA",
     "year": 2019,
-    "sessions": 252,
+    "sessions": 249,
     "first_session": "2019-01-02",
     "last_session": "2019-12-31",
-    "timestamp_aggregated_visible_market_orders": 4573957,
-    "scaling_transactions_type_4_5": 5879277,
+    "timestamp_aggregated_visible_market_orders": 4547078,
+    "scaling_transactions_type_4_5": 5845437,
     "sample_summary": {
-      "visible_market_orders": 4573957,
-      "market_orders_per_session_median": 16034.5,
-      "market_orders_per_session_p10": 10752.1,
-      "market_orders_per_session_p90": 29642.300000000003,
-      "order_size_shares_median": 54.0,
-      "order_size_shares_p90": 194.0,
+      "visible_market_orders": 4547078,
+      "market_orders_per_session_median": 16049.0,
+      "market_orders_per_session_p10": 10839.0,
+      "market_orders_per_session_p90": 29934.80000000002,
+      "order_size_shares_median": 55.0,
+      "order_size_shares_p90": 195.0,
       "order_size_shares_p99": 700.0,
       "spread_cents_median": 6.999999999999318,
       "spread_cents_p90": 15.00000000000341,
-      "buyer_initiated_fraction": 0.49744520991342944,
-      "ten_order_windows": 457263,
-      "ten_order_impact_cents_standard_deviation": 12.46569848955829,
-      "ten_order_zero_impact_fraction": 0.030059287543492477
+      "buyer_initiated_fraction": 0.49721139597781255,
+      "ten_order_windows": 454576,
+      "ten_order_impact_cents_standard_deviation": 12.463873447092,
+      "ten_order_zero_impact_fraction": 0.030124775615078668
     }
   },
   "prediction": {
@@ -29,137 +29,137 @@
     "train_last_date": "2019-10-17",
     "test_first_date": "2019-10-18",
     "test_last_date": "2019-12-31",
-    "train_observations": 354768,
-    "test_observations": 102495,
+    "train_observations": 352108,
+    "test_observations": 102468,
     "baseline": {
       "name": "OLS signed volume",
-      "test_mse_cents_squared": 147.22861433389747,
-      "test_rmse_cents": 12.133779886494459,
-      "test_mae_cents": 8.637637514325977,
-      "test_r_squared": 0.11812900210094868,
-      "test_sign_accuracy": 0.7699135481409336
+      "test_mse_cents_squared": 147.23420741326908,
+      "test_rmse_cents": 12.134010359863266,
+      "test_mae_cents": 8.63835412584002,
+      "test_r_squared": 0.11803187771478185,
+      "test_sign_accuracy": 0.7700018078460519
     },
     "augmented": {
       "name": "OLS count transforms",
-      "test_mse_cents_squared": 106.88839938281801,
-      "test_rmse_cents": 10.338684606023051,
-      "test_mae_cents": 7.474443790233339,
-      "test_r_squared": 0.3597591076026617,
-      "test_sign_accuracy": 0.7847439077043568
+      "test_mse_cents_squared": 106.86281198538471,
+      "test_rmse_cents": 10.337447072918183,
+      "test_mae_cents": 7.47315300039134,
+      "test_r_squared": 0.35986619356519134,
+      "test_sign_accuracy": 0.7847960147038145
     },
-    "delta_r_squared": 0.24163010550171304,
-    "relative_mse_reduction": 0.2739971107762552,
+    "delta_r_squared": 0.2418343158504095,
+    "relative_mse_reduction": 0.2741984769515322,
     "day_cluster_bootstrap": {
       "clusters": 51,
       "replicates": 10000,
-      "delta_r_squared_lower_95": 0.23166852190597864,
-      "delta_r_squared_median": 0.24151947262547713,
-      "delta_r_squared_upper_95": 0.25249944294719434,
-      "relative_mse_reduction_lower_95": 0.2646544685736429,
-      "relative_mse_reduction_median": 0.273943410174938,
-      "relative_mse_reduction_upper_95": 0.2843087295190864,
+      "delta_r_squared_lower_95": 0.23184365065665943,
+      "delta_r_squared_median": 0.24171917148620775,
+      "delta_r_squared_upper_95": 0.25272177497482556,
+      "relative_mse_reduction_lower_95": 0.26478343623156414,
+      "relative_mse_reduction_median": 0.2741329885791757,
+      "relative_mse_reduction_upper_95": 0.28456821065844556,
       "probability_delta_r_squared_nonpositive": 0.0
     },
     "feature_ablation": [
       {
         "name": "OLS count transforms",
-        "test_mse_cents_squared": 106.88839938281801,
-        "test_rmse_cents": 10.338684606023051,
-        "test_mae_cents": 7.474443790233339,
-        "test_r_squared": 0.3597591076026617,
-        "test_sign_accuracy": 0.7847439077043568
+        "test_mse_cents_squared": 106.86281198538471,
+        "test_rmse_cents": 10.337447072918183,
+        "test_mae_cents": 7.47315300039134,
+        "test_r_squared": 0.35986619356519134,
+        "test_sign_accuracy": 0.7847960147038145
       },
       {
         "name": "OLS volume and count",
-        "test_mse_cents_squared": 106.95685211586228,
-        "test_rmse_cents": 10.341994590786744,
-        "test_mae_cents": 7.478067127997642,
-        "test_r_squared": 0.3593490889369847,
-        "test_sign_accuracy": 0.7848643981002681
+        "test_mse_cents_squared": 106.93115306001093,
+        "test_rmse_cents": 10.340752054856113,
+        "test_mae_cents": 7.476772248477055,
+        "test_r_squared": 0.3594568141803187,
+        "test_sign_accuracy": 0.78494666854147
       },
       {
         "name": "OLS volume transforms",
-        "test_mse_cents_squared": 117.1836143540907,
-        "test_rmse_cents": 10.825138075520824,
-        "test_mae_cents": 7.792725973661798,
-        "test_r_squared": 0.29809275598088214,
-        "test_sign_accuracy": 0.7694416274236141
+        "test_mse_cents_squared": 117.15837869498263,
+        "test_rmse_cents": 10.823972408269647,
+        "test_mae_cents": 7.791678394319404,
+        "test_r_squared": 0.29819328617323737,
+        "test_sign_accuracy": 0.7695297591547315
       },
       {
         "name": "OLS signed volume",
-        "test_mse_cents_squared": 147.22861433389747,
-        "test_rmse_cents": 12.133779886494459,
-        "test_mae_cents": 8.637637514325977,
-        "test_r_squared": 0.11812900210094868,
-        "test_sign_accuracy": 0.7699135481409336
+        "test_mse_cents_squared": 147.23420741326908,
+        "test_rmse_cents": 12.134010359863266,
+        "test_mae_cents": 8.63835412584002,
+        "test_r_squared": 0.11803187771478185,
+        "test_sign_accuracy": 0.7700018078460519
       }
     ],
     "basis_point_robustness": {
-      "baseline_r_squared": 0.11400138278292082,
-      "augmented_r_squared": 0.30899512879722635,
-      "relative_mse_reduction": 0.2200835782642423
+      "baseline_r_squared": 0.11411345717383325,
+      "augmented_r_squared": 0.3090509652004636,
+      "relative_mse_reduction": 0.22004793910147713
     },
     "trimmed_reference_protocol": {
       "bounds": {
         "volume_imbalance": [
-          -3548.5406118479577,
-          3543.560557277083
+          -3555.604872964555,
+          3549.1216689476055
         ],
         "impact_cents": [
-          -36.97972195775072,
-          37.006277340423345
+          -36.970733520969254,
+          36.99589625513037
         ]
       },
-      "train_observations": 345800,
-      "test_observations": 100133,
+      "train_observations": 343082,
+      "test_observations": 100070,
       "baseline": {
         "name": "OLS signed volume",
-        "test_mse_cents_squared": 103.53120880670043,
-        "test_rmse_cents": 10.175028688249505,
-        "test_mae_cents": 7.663787010760676,
-        "test_r_squared": 0.24093192092497306,
-        "test_sign_accuracy": 0.766362057091167
+        "test_mse_cents_squared": 103.11838346974753,
+        "test_rmse_cents": 10.154722225139766,
+        "test_mae_cents": 7.6534227996271005,
+        "test_r_squared": 0.24093397283642592,
+        "test_sign_accuracy": 0.7664139725773769
       },
       "augmented": {
         "name": "OLS count transforms",
-        "test_mse_cents_squared": 84.21160615672903,
-        "test_rmse_cents": 9.176688191102988,
-        "test_mae_cents": 6.970488003004037,
-        "test_r_squared": 0.38257900339444295,
-        "test_sign_accuracy": 0.7824183053565371
+        "test_mse_cents_squared": 83.82217813648049,
+        "test_rmse_cents": 9.155445272431074,
+        "test_mae_cents": 6.958290956438258,
+        "test_r_squared": 0.38297551217022174,
+        "test_sign_accuracy": 0.7824293605159486
       },
-      "relative_mse_reduction": 0.18660655924574754
+      "relative_mse_reduction": 0.1871267244887337
     },
     "horizon_robustness": [
       {
         "horizon": 5,
-        "baseline_r_squared": 0.07411893196427444,
-        "augmented_r_squared": 0.28204972901179515,
-        "relative_mse_reduction": 0.22457614074413457
+        "baseline_r_squared": 0.07409476432056672,
+        "augmented_r_squared": 0.28211179642290585,
+        "relative_mse_reduction": 0.22466341487927244
       },
       {
         "horizon": 10,
-        "baseline_r_squared": 0.11812900210094868,
-        "augmented_r_squared": 0.3597591076026617,
-        "relative_mse_reduction": 0.2739971107762552
+        "baseline_r_squared": 0.11803187771478185,
+        "augmented_r_squared": 0.35986619356519134,
+        "relative_mse_reduction": 0.2741984769515322
       },
       {
         "horizon": 20,
-        "baseline_r_squared": 0.17190349622895162,
-        "augmented_r_squared": 0.42606815621471517,
-        "relative_mse_reduction": 0.3069263773344403
+        "baseline_r_squared": 0.17176498883543112,
+        "augmented_r_squared": 0.4260972502075293,
+        "relative_mse_reduction": 0.30707740912145853
       },
       {
         "horizon": 50,
-        "baseline_r_squared": 0.2217025191329216,
-        "augmented_r_squared": 0.4715545890867239,
-        "relative_mse_reduction": 0.32102387081537176
+        "baseline_r_squared": 0.22165916279722497,
+        "augmented_r_squared": 0.47150544213229284,
+        "relative_mse_reduction": 0.3209985489557158
       },
       {
         "horizon": 100,
-        "baseline_r_squared": 0.2690690588457736,
-        "augmented_r_squared": 0.4823832821860593,
-        "relative_mse_reduction": 0.29183909358582816
+        "baseline_r_squared": 0.2690613576710468,
+        "augmented_r_squared": 0.4822966279633889,
+        "relative_mse_reduction": 0.2917280027950381
       }
     ]
   },
@@ -168,38 +168,38 @@
     "minimum_horizon": 10,
     "maximum_horizon": 5000,
     "shape": {
-      "alpha": 0.6756336714711664,
-      "beta": 2.034550488012723,
+      "alpha": 0.7263179590721027,
+      "beta": 1.7456926610281822,
       "success": true,
-      "cost": 2.7235771971056977e-07
+      "cost": 2.8023847575830985e-07
     },
     "width_scale": {
-      "prefactor": 233.90114365732737,
-      "exponent": 0.9763283663866096,
-      "standard_error": 0.011633230903244127,
-      "r_squared": 0.9963222512276899,
-      "log_residual_standard_deviation": 0.1142860979538578,
+      "prefactor": 156.01683539653843,
+      "exponent": 0.9757805644368271,
+      "standard_error": 0.012462797175745204,
+      "r_squared": 0.9957766021685182,
+      "log_residual_standard_deviation": 0.122435845265401,
       "observations": 28
     },
     "height_scale": {
-      "prefactor": 0.000608350334220279,
-      "exponent": 0.6563829234636747,
-      "standard_error": 0.0060915197540193,
-      "r_squared": 0.9977657143793538,
-      "log_residual_standard_deviation": 0.05984373808840748,
+      "prefactor": 0.0003911310341693073,
+      "exponent": 0.6558252733631282,
+      "standard_error": 0.006454322370929766,
+      "r_squared": 0.9974880784593153,
+      "log_residual_standard_deviation": 0.06340794959241733,
       "observations": 28
     },
-    "sign_hurst": {
-      "prefactor": 1.2448706129905664,
-      "exponent": 0.6933362671340977,
-      "standard_error": 0.0028451497113932095,
-      "r_squared": 0.9995623714381148,
-      "log_residual_standard_deviation": 0.027951053435980356,
+    "sign_variance_scaling": {
+      "prefactor": 1.2449504910282678,
+      "exponent": 0.6933013601667489,
+      "standard_error": 0.002856476893083179,
+      "r_squared": 0.999558837044911,
+      "log_residual_standard_deviation": 0.028062332873905037,
       "observations": 28
     }
   },
   "liquidity": {
-    "kyle_lambda_t10_cents_per_share": 0.018366742078481133,
-    "kyle_decay_exponent": 0.31324833297593635
+    "kyle_lambda_t10_cents_per_share": 0.018368724671259138,
+    "kyle_decay_exponent": 0.3146242474990885
   }
 }

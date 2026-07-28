@@ -3,6 +3,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #include "tsla_lob/message.hpp"
 
@@ -32,5 +34,24 @@ struct EventRecord {
 static_assert(sizeof(Level) == 8);
 static_assert(sizeof(BookSnapshot) == 32);
 static_assert(sizeof(EventRecord) == 64);
+
+struct SessionFiles {
+  std::string date;
+  std::string message_path;
+  std::string book_path;
+  std::uint64_t requested_end_ms{};
+};
+
+struct SessionData {
+  std::string date;
+  std::vector<EventRecord> events;
+};
+
+struct Dataset {
+  std::vector<SessionData> sessions;
+  std::uint64_t delivered_sessions{};
+  std::uint64_t declared_source_exclusions{};
+  std::uint64_t events{};
+};
 
 }  // namespace tsla_lob

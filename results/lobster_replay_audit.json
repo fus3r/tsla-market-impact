@@ -1,0 +1,26 @@
+{
+  "dataset": {
+    "delivered_sessions": 252,
+    "included_sessions": 249,
+    "declared_source_exclusions": 3,
+    "events": 38516432
+  },
+  "audit": {
+    "seeded_sessions": 249,
+    "post_seed_transitions": 38516183,
+    "exact_transitions": 28544808,
+    "depth_censored_transitions": 9971375,
+    "mismatches": 0,
+    "unsupported": 0,
+    "invalid_snapshots": 0,
+    "events_by_type": {
+      "1": 17309650,
+      "2": 35950,
+      "3": 12531637,
+      "4": 6467058,
+      "5": 2171888,
+      "6": 249,
+      "7": 0
+    }
+  }
+}

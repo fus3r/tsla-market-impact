@@ -21,6 +21,18 @@ else()
   )
 endif()
 
+add_executable(lobster_replay cpp/src/main.cpp)
+target_link_libraries(lobster_replay PRIVATE tsla_lob)
+
+if(MSVC)
+  target_compile_options(lobster_replay PRIVATE /W4 /permissive-)
+else()
+  target_compile_options(
+    lobster_replay
+    PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow
+  )
+endif()
+
 include(CTest)
 if(BUILD_TESTING)
   add_executable(tsla_lob_csv_reader_test cpp/tests/csv_reader_test.cpp)

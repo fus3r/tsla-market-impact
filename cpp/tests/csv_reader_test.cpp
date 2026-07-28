@@ -336,6 +336,89 @@ void test_snapshot_invariants() {
   }
 }
 
+void test_replay_aggregation() {
+  const tsla_lob::BookSnapshot initial =
+      book(101, 20, 99, 30, 102, 40, 98, 50);
+  const tsla_lob::BookSnapshot after_cancel =
+      book(101, 15, 99, 30, 102, 40, 98, 50);
+  const tsla_lob::BookSnapshot after_depletion =
+      book(102, 40, 99, 30, 103, 60, 98, 50);
+  const tsla_lob::BookSnapshot observable_mismatch =
+      book(102, 39, 99, 30, 103, 60, 98, 50);
+
+  tsla_lob::Dataset dataset;
+  dataset.delivered_sessions = 3;
+  dataset.declared_source_exclusions = 1;
+  dataset.events = 6;
+  dataset.sessions = {
+      {
+          "2019-01-02",
+          {
+              {message(tsla_lob::EventType::submission, -1, 101, 20), initial},
+              {message(tsla_lob::EventType::partial_cancel, -1, 101, 5),
+               after_cancel},
+              {message(tsla_lob::EventType::visible_execution, -1, 101, 15),
+               after_depletion},
+              {message(tsla_lob::EventType::hidden_execution, -1, 102, 1),
+               observable_mismatch},
+              {message(tsla_lob::EventType::submission, 0, 102, 1),
+               observable_mismatch},
+          },
+      },
+      {
+          "2019-01-03",
+          {
+              {message(tsla_lob::EventType::cross_trade, -1, 0, 1),
+               book(101, 0, 99, 30, 102, 40, 98, 50)},
+          },
+      },
+  };
+
+  const tsla_lob::ReplayMetrics metrics =
+      tsla_lob::replay_dataset(dataset);
+  CHECK(metrics.events == 6);
+  CHECK(metrics.seeded_sessions == 2);
+  CHECK(metrics.exact_transitions == 1);
+  CHECK(metrics.depth_censored_transitions == 1);
+  CHECK(metrics.mismatches == 1);
+  CHECK(metrics.unsupported == 1);
+  CHECK(metrics.invalid_snapshots == 1);
+  CHECK(metrics.events_by_type[1] == 2);
+  CHECK(metrics.events_by_type[2] == 1);
+  CHECK(metrics.events_by_type[4] == 1);
+  CHECK(metrics.events_by_type[5] == 1);
+  CHECK(metrics.events_by_type[6] == 1);
+
+  const std::string expected_json =
+      "{\n"
+      "  \"dataset\": {\n"
+      "    \"delivered_sessions\": 3,\n"
+      "    \"included_sessions\": 2,\n"
+      "    \"declared_source_exclusions\": 1,\n"
+      "    \"events\": 6\n"
+      "  },\n"
+      "  \"audit\": {\n"
+      "    \"seeded_sessions\": 2,\n"
+      "    \"post_seed_transitions\": 4,\n"
+      "    \"exact_transitions\": 1,\n"
+      "    \"depth_censored_transitions\": 1,\n"
+      "    \"mismatches\": 1,\n"
+      "    \"unsupported\": 1,\n"
+      "    \"invalid_snapshots\": 1,\n"
+      "    \"events_by_type\": {\n"
+      "      \"1\": 2,\n"
+      "      \"2\": 1,\n"
+      "      \"3\": 0,\n"
+      "      \"4\": 1,\n"
+      "      \"5\": 1,\n"
+      "      \"6\": 1,\n"
+      "      \"7\": 0\n"
+      "    }\n"
+      "  }\n"
+      "}\n";
+  CHECK(tsla_lob::replay_audit_json(dataset, metrics) == expected_json);
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -349,6 +432,7 @@ int main(int argc, char* argv[]) {
     test_analysis_policy(argv[2]);
     test_level_two_transition_contract();
     test_snapshot_invariants();
+    test_replay_aggregation();
     std::cout
         << "all C++ decoding, replay, and source-integrity tests passed\n";
     return 0;

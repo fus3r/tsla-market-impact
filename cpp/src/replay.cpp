@@ -5,12 +5,36 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <map>
+#include <regex>
+#include <set>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <utility>
+
+#include "tsla_lob/csv_reader.hpp"
+#include "tsla_lob/session_integrity.hpp"
 
 namespace tsla_lob {
 namespace {
 
 using Side = std::array<Level, kDepth>;
 static_assert(kDepth == 2);
+
+std::string regex_escape(const std::string& text) {
+  static constexpr std::string_view special = R"(\.^$|()[]{}*+?)";
+  std::string escaped;
+  escaped.reserve(text.size() * 2);
+  for (const char character : text) {
+    if (special.find(character) != std::string_view::npos) {
+      escaped.push_back('\\');
+    }
+    escaped.push_back(character);
+  }
+  return escaped;
+}
 
 bool better_price(std::int32_t left, std::int32_t right, bool bids) {
   return bids ? left > right : left < right;
@@ -101,6 +125,122 @@ TransitionStatus audit_removal(
 
 }  // namespace
 
+std::vector<SessionFiles> discover_sessions(
+    const std::filesystem::path& raw_dir,
+    const AnalysisPolicy& policy) {
+  if (!std::filesystem::is_directory(raw_dir)) {
+    throw std::runtime_error(
+        "raw directory does not exist: " + raw_dir.string());
+  }
+
+  const std::regex pattern(
+      "^" + regex_escape(policy.symbol) +
+      "_(\\d{4}-\\d{2}-\\d{2})_(\\d+)_(\\d+)_(message|orderbook)_" +
+      std::to_string(kDepth) + "\\.csv$");
+
+  struct Pair {
+    std::string date;
+    std::string message_path;
+    std::string book_path;
+    std::uint64_t requested_end_ms{};
+  };
+  std::map<std::string, Pair> grouped;
+  for (const auto& entry : std::filesystem::directory_iterator(raw_dir)) {
+    if (!entry.is_regular_file()) {
+      continue;
+    }
+    std::smatch match;
+    const std::string filename = entry.path().filename().string();
+    if (!std::regex_match(filename, match, pattern)) {
+      continue;
+    }
+    const std::string date = match[1].str();
+    if (!date.starts_with(std::to_string(policy.year) + '-')) {
+      continue;
+    }
+
+    const std::string key =
+        date + '_' + match[2].str() + '_' + match[3].str();
+    Pair& pair = grouped[key];
+    pair.date = date;
+    pair.requested_end_ms = std::stoull(match[3].str());
+    if (match[4].str() == "message") {
+      pair.message_path = entry.path().string();
+    } else {
+      pair.book_path = entry.path().string();
+    }
+  }
+
+  std::vector<SessionFiles> sessions;
+  sessions.reserve(grouped.size());
+  for (const auto& [key, pair] : grouped) {
+    if (pair.message_path.empty() || pair.book_path.empty()) {
+      throw std::runtime_error("incomplete LOBSTER pair: " + key);
+    }
+    sessions.push_back(
+        {
+            pair.date,
+            pair.message_path,
+            pair.book_path,
+            pair.requested_end_ms,
+        });
+  }
+  if (sessions.empty()) {
+    throw std::runtime_error(
+        "no " + policy.symbol + ' ' + std::to_string(policy.year) +
+        " level-" + std::to_string(kDepth) +
+        " sessions found in " + raw_dir.string());
+  }
+  return sessions;
+}
+
+Dataset load_dataset(
+    const std::vector<SessionFiles>& sessions,
+    const AnalysisPolicy& policy) {
+  Dataset dataset;
+  dataset.sessions.reserve(sessions.size());
+  dataset.delivered_sessions =
+      static_cast<std::uint64_t>(sessions.size());
+  std::set<std::string> observed_source_exclusions;
+
+  for (const SessionFiles& files : sessions) {
+    std::vector<EventRecord> events =
+        decode_paired_files(files.message_path, files.book_path);
+    const SessionCoverage coverage = validate_session_source(
+        files.date,
+        files.requested_end_ms,
+        events,
+        policy);
+    if (coverage.status ==
+        SessionSourceStatus::declared_source_exclusion) {
+      observed_source_exclusions.insert(files.date);
+      continue;
+    }
+
+    std::erase_if(
+        events,
+        [&coverage](const EventRecord& event) {
+          return event.message.timestamp_ns >
+                 coverage.scheduled_close_ns;
+        });
+    if (events.size() != coverage.included_events) {
+      throw std::runtime_error(
+          "session coverage count changed while filtering " + files.date);
+    }
+    dataset.events += static_cast<std::uint64_t>(events.size());
+    dataset.sessions.push_back({files.date, std::move(events)});
+  }
+
+  validate_analysis_universe(
+      dataset.delivered_sessions,
+      static_cast<std::uint64_t>(dataset.sessions.size()),
+      observed_source_exclusions,
+      policy);
+  dataset.declared_source_exclusions =
+      static_cast<std::uint64_t>(observed_source_exclusions.size());
+  return dataset;
+}
+
 TransitionStatus audit_transition(
     const BookSnapshot& previous,
     const Message& message,
@@ -164,6 +304,100 @@ bool valid_snapshot(const BookSnapshot& snapshot) noexcept {
     }
   }
   return true;
+}
+
+ReplayMetrics replay_dataset(const Dataset& dataset) {
+  ReplayMetrics metrics;
+  for (const SessionData& session : dataset.sessions) {
+    if (session.events.empty()) {
+      continue;
+    }
+    ++metrics.seeded_sessions;
+    const BookSnapshot* previous = nullptr;
+    for (const EventRecord& record : session.events) {
+      ++metrics.events;
+      const std::size_t event_type =
+          static_cast<std::size_t>(record.message.event_type);
+      if (event_type < metrics.events_by_type.size()) {
+        ++metrics.events_by_type[event_type];
+      }
+      if (!valid_snapshot(record.book)) {
+        ++metrics.invalid_snapshots;
+      }
+
+      if (previous != nullptr) {
+        switch (audit_transition(
+            *previous,
+            record.message,
+            record.book)) {
+          case TransitionStatus::exact:
+            ++metrics.exact_transitions;
+            break;
+          case TransitionStatus::depth_censored:
+            ++metrics.depth_censored_transitions;
+            break;
+          case TransitionStatus::mismatch:
+            ++metrics.mismatches;
+            break;
+          case TransitionStatus::unsupported:
+            ++metrics.unsupported;
+            break;
+        }
+      }
+      previous = &record.book;
+    }
+  }
+  return metrics;
+}
+
+std::string replay_audit_json(
+    const Dataset& dataset,
+    const ReplayMetrics& metrics) {
+  const std::uint64_t post_seed_transitions =
+      metrics.events >= metrics.seeded_sessions
+          ? metrics.events - metrics.seeded_sessions
+          : 0;
+  std::ostringstream output;
+  output
+      << "{\n"
+      << "  \"dataset\": {\n"
+      << "    \"delivered_sessions\": "
+      << dataset.delivered_sessions << ",\n"
+      << "    \"included_sessions\": "
+      << dataset.sessions.size() << ",\n"
+      << "    \"declared_source_exclusions\": "
+      << dataset.declared_source_exclusions << ",\n"
+      << "    \"events\": " << dataset.events << "\n"
+      << "  },\n"
+      << "  \"audit\": {\n"
+      << "    \"seeded_sessions\": "
+      << metrics.seeded_sessions << ",\n"
+      << "    \"post_seed_transitions\": "
+      << post_seed_transitions << ",\n"
+      << "    \"exact_transitions\": "
+      << metrics.exact_transitions << ",\n"
+      << "    \"depth_censored_transitions\": "
+      << metrics.depth_censored_transitions << ",\n"
+      << "    \"mismatches\": " << metrics.mismatches << ",\n"
+      << "    \"unsupported\": " << metrics.unsupported << ",\n"
+      << "    \"invalid_snapshots\": "
+      << metrics.invalid_snapshots << ",\n"
+      << "    \"events_by_type\": {\n";
+  for (std::size_t event_type = 1;
+       event_type < metrics.events_by_type.size();
+       ++event_type) {
+    output
+        << "      \"" << event_type << "\": "
+        << metrics.events_by_type[event_type]
+        << (event_type + 1 < metrics.events_by_type.size()
+                ? ",\n"
+                : "\n");
+  }
+  output
+      << "    }\n"
+      << "  }\n"
+      << "}\n";
+  return output.str();
 }
 
 }  // namespace tsla_lob

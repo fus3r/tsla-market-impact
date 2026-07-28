@@ -38,11 +38,11 @@ dates as source exclusions.
 
 Python and C++ consume the same policy. The Python annual gate requires 252
 delivered pairs, 249 included sessions, three declared exclusions, and no
-unexplained coverage failure; the C++ validator enforces the same close,
-exclusion, and universe-count rules for decoded sessions. There is no generic
-skip-incomplete mode. The official 13:00 closes on 3 July, 29 November, and
-24 December pass the 60-second coverage threshold; rows after 13:00 are
-excluded from preparation.
+unexplained coverage failure; the C++ annual replay enforces the same close,
+exclusion, and universe-count rules before producing an aggregate diagnostic.
+There is no generic skip-incomplete mode. The official 13:00 closes on 3 July,
+29 November, and 24 December pass the 60-second coverage threshold; rows after
+13:00 are excluded from preparation and replay.
 
 The calendar boundaries remain fixed rather than being recalculated after the
 exclusions: development ends on 6 August, selection runs from 7 August through
@@ -54,14 +54,21 @@ aggregate audit is in
 [`results/session_coverage.csv`](results/session_coverage.csv). This repository
 does not claim complete 2019 coverage or external replication.
 
+The level-2 transition audit covers 38,516,432 included events. After one seed
+per session, it classifies 28,544,808 transitions as exact and 9,971,375 as
+depth-censored, with no observable mismatch, unsupported event, or invalid
+snapshot. The committed
+[`results/lobster_replay_audit.json`](results/lobster_replay_audit.json)
+contains only these aggregate diagnostics and event-type counts.
+
 ## Files
 
 - `analysis-policy.conf` is the shared Python/C++ source and calendar policy.
-- `cpp/` contains the fixed-width decoder, source-integrity checks, and the
-  [finite-depth transition contract](cpp/README.md).
+- `cpp/` contains the fixed-width decoder, annual source-integrity and replay
+  audit, and the [finite-depth transition contract](cpp/README.md).
 - `src/tsla_market_impact/` contains the LOBSTER reconstruction and analysis code.
-- `results/` contains aggregate tables, including the 252-row coverage audit.
-  Licensed rows are not included.
+- `results/` contains aggregate tables, including the 252-row coverage audit
+  and annual level-2 replay diagnostic. Licensed rows are not included.
 - `report/` contains the LaTeX source, figures, references, and compiled PDF.
 - `tests/` checks source integrity, data alignment, event-time windows,
   chronological splits, bootstrap, and scaling fits with synthetic data.
@@ -137,6 +144,19 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+Regenerate the annual C++ aggregate after the tests pass:
+
+```bash
+./build/lobster_replay \
+  --raw-dir data/raw/TSLA \
+  --analysis-policy analysis-policy.conf \
+  --json results/lobster_replay_audit.json
+```
+
+The command audits every delivered pair, refuses any undeclared coverage
+failure, filters post-close rows, and exits unsuccessfully if the replay finds
+an observable mismatch, unsupported event, or invalid snapshot.
 
 ## Origin and credit
 

@@ -13,6 +13,7 @@ from .data import (
 )
 from .pipeline import run_analysis
 from .policy import DEFAULT_ANALYSIS_POLICY, load_analysis_policy
+from .queue import run_queue_analysis
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -40,6 +41,12 @@ def _parser() -> argparse.ArgumentParser:
     analyze.add_argument("--scaling", type=Path, required=True)
     analyze.add_argument("--results", type=Path, default=Path("results"))
     analyze.add_argument("--figures", type=Path, default=Path("report/figures"))
+
+    queue = subparsers.add_parser("analyze-queue")
+    queue.add_argument("--bins", type=Path, required=True)
+    queue.add_argument("--results", type=Path, default=Path("results"))
+    queue.add_argument("--figures", type=Path, default=Path("report/figures"))
+
     for command in subparsers.choices.values():
         command.add_argument(
             "--analysis-policy",
@@ -80,6 +87,13 @@ def main() -> None:
         result = run_analysis(
             args.visible,
             args.scaling,
+            args.results,
+            args.figures,
+            test_start_date=policy.test_start,
+        )
+    elif args.command == "analyze-queue":
+        result = run_queue_analysis(
+            args.bins,
             args.results,
             args.figures,
             test_start_date=policy.test_start,

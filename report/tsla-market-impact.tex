@@ -16,10 +16,10 @@
 \usepackage[hidelinks]{hyperref}
 
 \hypersetup{
-  pdftitle={Signed order count in aggregate price impact: TSLA, 2019},
+  pdftitle={Signed order count and queue imbalance: TSLA, 2019},
   pdfauthor={Riad Darwish},
-  pdfsubject={Empirical market microstructure study using LOBSTER event data},
-  pdfkeywords={market impact, order flow imbalance, market microstructure, LOBSTER, TSLA}
+  pdfsubject={Conditional impact, next-price prediction, and finite-depth replay},
+  pdfkeywords={market impact, queue imbalance, market microstructure, LOBSTER, C++, TSLA}
 }
 
 \input{results.tex}
@@ -33,7 +33,7 @@
 
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[L]{\small Signed order count in aggregate price impact}
+\fancyhead[L]{\small TSLA market impact and depth-aware replay}
 \fancyhead[R]{\small Riad Darwish}
 \fancyfoot[C]{\small\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
@@ -45,15 +45,15 @@
 
 \thispagestyle{plain}
 \begin{center}
-  {\LARGE\bfseries Signed order count in aggregate price impact\par}
+  {\LARGE\bfseries Signed order count and queue imbalance\par}
   \vspace{1.5mm}
   {\Large TSLA, 2019\par}
   \vspace{4mm}
-  {\large Order reconstruction, chronological validation, and scaling analysis\par}
+  {\large Conditional impact, chronological prediction, and depth-aware replay\par}
   \vspace{6mm}
   {\large Riad Darwish\par}
   {\normalsize CentraleSup\'elec\par}
-  {\normalsize 27 July 2026\par}
+  {\normalsize 29 July 2026\par}
 \end{center}
 
 \vspace{3mm}
@@ -86,6 +86,16 @@ terms raise the score to \VolumeRtwo{}, and raw signed order count raises it to
 linear baseline. Resampling complete test dates gives a 95 percent interval of
 \BootstrapMseLower{} to \BootstrapMseUpper{} for that reduction.
 
+Separately, a C++20 engine audits \ReplayEvents{} included level-2
+message/snapshot pairs without claiming full order priority. It classifies
+\ReplayExact{} transitions as exact and \ReplayCensored{} as depth-censored,
+with no observable mismatch, unsupported event, or invalid snapshot. A
+forward-looking queue experiment then predicts the direction of the next
+same-session mid-price change. The pooled signal is weak; in the exploratory
+one-tick subset, ROC-AUC is \QueueOneTickAuc{} and Brier score improves by
+\QueueOneTickBrierReduction{} with a complete-date interval of
+\QueueOneTickLower{} to \QueueOneTickUpper{}.
+
 I also apply the finite-size scaling construction of \citet{patzelt2018} to the
 same stock-year. The width and height scale regressions have in-sample \Rtwo{}
 values of \WidthFitRtwo{} and \HeightFitRtwo{}. These fits use 28 estimated
@@ -107,8 +117,8 @@ the study does not claim complete 2019 coverage or external replication.
 \end{center}
 
 \vspace{0.5em}
-\textbf{Keywords:} market impact, order-flow imbalance, market microstructure,
-chronological validation, finite-size scaling
+\textbf{Keywords:} market impact, queue imbalance, market microstructure,
+chronological validation, order-book replay, finite-size scaling
 
 \section{Question}
 
@@ -156,6 +166,11 @@ imbalance, local liquidity estimates, and supervised impact models. I retain the
 transaction reconstruction and scaling exercise, but rebuild the supervised
 evaluation around untrimmed chronological date splits. The model ablation
 isolates signed count as the useful extension of the volume baseline.
+
+\citet{gould2015} study queue imbalance as a one-tick-ahead price predictor and
+emphasize its dependence on the spread regime. I use the displayed level-1
+imbalance for a separate next-mid-price-direction experiment. The pooled sample
+is the primary comparison; the one-tick subset is reported as exploratory.
 
 \section{Data and transaction reconstruction}
 
@@ -480,6 +495,127 @@ test impact makes them unsuitable as the primary evaluation. The cutoff raises
 the baseline much more than the count model, explaining the difference between
 0.24 to 0.38 and the untrimmed 0.12 to 0.36 comparison.
 
+\section{Depth-aware L2 replay and next-price direction}
+\label{sec:replay}
+
+\subsection{Finite-depth transition audit}
+
+A finite-depth LOBSTER file is not a historical level-3 feed. Its message rows
+describe events that update the requested price range
+\citep{lobsterstructure}. When a displayed level is depleted, a new tail level
+can enter from outside depth 2. Orders that formed that tail while it was
+unobserved are absent, so reconstructing their FIFO queues would invent state.
+
+The C++20 audit seeds each included session from its first authoritative
+snapshot. It applies each later observable event to the previous two levels and
+compares the result with the supplied post-event snapshot. A transition is
+\emph{exact} when every resulting level was known. It is
+\emph{depth-censored} when depletion exposes an unobserved tail: the surviving
+prefix is checked and replay then resumes from the authoritative snapshot.
+Prices, sizes, and timestamps remain fixed-point integers.
+
+\begin{table}[H]
+  \centering
+  \caption{Included-session transition audit. The first row of each of the
+  \Sessions{} sessions seeds replay and is not classified as a transition.}
+  \label{tab:replayaudit}
+  \begin{tabular}{lr}
+    \toprule
+    Quantity & Value \\
+    \midrule
+    Message/snapshot pairs & \ReplayEvents{} \\
+    Fully determined transitions & \ReplayExact{} (\ReplayExactFraction{}) \\
+    Depth-censored transitions & \ReplayCensored{} (\ReplayCensoredFraction{}) \\
+    Observable mismatches & 0 \\
+    Unsupported events / invalid snapshots & 0 / 0 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Zero mismatches means that all observable prices and sizes agree under this
+contract. It does not turn level-2 data into an exchange matching engine,
+validate an unobserved queue, or establish execution priority.
+
+\subsection{Benchmark protocol}
+
+The benchmark separates complete CSV decoding from replay over the resident
+64-byte event records. The measured replay audits transitions, checks snapshot
+invariants, and maintains a checksum. The queue export below runs separately
+after those measured passes.
+
+\begin{table}[H]
+  \centering
+  \caption{Single-threaded included-session benchmark on an Apple M4 Pro,
+  48 GB, compiled for arm64 with Apple Clang 17 in Release mode.}
+  \label{tab:replaybenchmark}
+  \begin{tabular}{lrr}
+    \toprule
+    Phase & Run-average ns/event & Million events/s \\
+    \midrule
+    CSV decode, median of 3 passes & \DecodeMedianNs{} & \DecodeThroughput{} \\
+    Resident replay, median of 11 passes & \ReplayMedianNs{} & \ReplayThroughput{} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Two unmeasured replay warm-ups precede the eleven passes. Their p95 run-average
+is \ReplayPninetyfiveNs{} ns/event. The operating-system page cache is not
+flushed between decode passes: the first recorded pass costs \FirstDecodeNs{}
+ns/event. Each timing divides a complete pass by \ReplayEvents{}. These are
+throughput measurements, not individual-event tail latency or wire-to-wire
+trading latency.
+
+\subsection{A forward queue-imbalance target}
+
+For the displayed best queues $q_t^b$ and $q_t^a$, define
+\begin{equation}
+  I_t = \frac{q_t^b-q_t^a}{q_t^b+q_t^a}.
+\end{equation}
+The label is one when the next same-session mid-price change is upward and zero
+when it is downward. I retain the first displayed state in each session and
+later states after an event changes a best price or size. C++ aggregates them
+into 101 fixed imbalance bins by date and spread regime; no row-level state
+enters the statistical package.
+
+The first 198 included dates through 17 October fit a one-feature logistic
+model. All 51 dates from 18 October onward are scored without refitting. The
+intercept-only benchmark uses the training up-move frequency. Brier
+improvements and intervals compare the two models while resampling complete
+test dates.
+
+\begin{table}[H]
+  \centering
+  \caption{Direction of the next mid-price change on the fixed late-2019 test
+  dates. Brier reduction is relative to the training-frequency benchmark.}
+  \label{tab:queueforecast}
+  \begin{tabular}{lrrr}
+    \toprule
+    Best-quote state sample & Observations & ROC-AUC & Brier reduction \\
+    \midrule
+    All spreads & \QueueAllObservations{} & \QueueAllAuc{} & \QueueAllBrierReduction{} \\
+    One-tick spread & \QueueOneTickObservations{} & \QueueOneTickAuc{} & \QueueOneTickBrierReduction{} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The pooled interval runs from \QueueAllLower{} to \QueueAllUpper{}, so its
+signal is weak. The one-tick interval runs from \QueueOneTickLower{} to
+\QueueOneTickUpper{}, and the monotone holdout curve follows the earlier-date
+logistic fit. Because the spread
+stratification is exploratory, this stronger subset requires confirmation on
+another asset or year. A direction score before fees, latency, and queue
+position is not a trading strategy.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/queue-imbalance.pdf}
+  \caption{Next-move calibration for best-quote states. The orange curve is
+  fitted on the first 198 included dates; blue circles are empirical
+  frequencies on the final 51 dates. Test bins with fewer than 100 observations
+  are omitted from the scatter but remain in the scores.}
+  \label{fig:queue}
+\end{figure}
+
 \section{Scaling analysis}
 \label{sec:scaling}
 
@@ -537,9 +673,9 @@ main deviations from a straight power law.
   \end{tabular}
 \end{table}
 
-\begin{figure}[tbp]
+\begin{figure}[H]
   \centering
-  \includegraphics[width=\textwidth]{figures/scaling-fits.pdf}
+  \includegraphics[width=0.82\textwidth]{figures/scaling-fits.pdf}
   \caption{Power-law fits for the estimated width and height scales. Lower
   panels show log residuals. The displayed \Rtwo{} values describe these 28
   in-sample points only.}
@@ -567,9 +703,17 @@ this included TSLA sample in-sample; the cross-asset claim in
   \item The variables and response cover the same window, and order flow is
   endogenous. The fitted coefficients are neither pre-trade forecasts nor
   causal price effects.
+  \item The replay checks finite-depth state transitions against authoritative
+  snapshots. It cannot recover orders submitted outside the requested depth,
+  FIFO priority, network timing, or exchange matching logic.
   \item Timestamp and side grouping cannot recover investor identity or
   institutional metaorders. The book covers NASDAQ rather than consolidated US
   liquidity, and hidden-execution signs are uncertain around the midpoint.
+  \item Several queue states can share the same eventual mid-price-change
+  label. The score does not represent independent event trials; uncertainty is
+  resampled at the trading-date level.
+  \item The one-tick spread stratification is exploratory. Its stronger result
+  is not evidence of generalization beyond this stock-year.
   \item The feature family grew out of the course analysis. Although dates are
   held out chronologically, there is no second untouched year after the feature
   comparison. The bootstrap does not account for that research process.
@@ -591,11 +735,13 @@ The Python package first loads the shared source and calendar policy and writes
 an aggregate scheduled-close audit. It then reconstructs the two transaction
 tables from the included sessions, builds event-time windows, fits the models,
 and writes the remaining aggregate files under \texttt{results/}. The C++20
-library loads the same policy and rejects undeclared incomplete sessions.
-The figures are vector PDFs. Synthetic tests cover file pairing, source
-coverage, half-day filtering, book alignment, day boundaries, chronological
-splits, clustered resampling, and the scaling regressions. Reproducing the
-annual tables requires licensed LOBSTER files, which are not tracked.
+library loads the same policy, rejects undeclared incomplete sessions, audits
+finite-depth transitions, and exports daily queue bins. The figures are vector
+PDFs. Synthetic tests cover file pairing, source coverage, half-day filtering,
+book alignment, day boundaries, fixed chronological splits, complete-date
+resampling, queue evaluation, and the scaling regressions. Reproducing the
+annual transaction tables, replay, and queue bins requires licensed LOBSTER
+files, which are not tracked.
 
 The course presentation lists L. Cohen, R. Darwish, A. Pariente, H. Rohrbach,
 and R. Sithisak. Anastasia Bugaenko supervised the work. I wrote this standalone
@@ -609,6 +755,12 @@ On the included-session late-2019 holdout, adding signed count to the volume mod
 \Rtwo{} from \BaselineRtwo{} to \AugmentedRtwo{} and reduces MSE by
 \MseReduction{}. Raw count accounts for almost all of that gain. The ordering is
 stable across the time and horizon checks reported above.
+
+The finite-depth engine audits \ReplayEvents{} included events without claiming
+unobservable FIFO state and replays the resident sample at
+\ReplayThroughput{} million events/s on the stated machine. Queue imbalance is
+only weakly predictive with spreads pooled, but reaches ROC-AUC
+\QueueOneTickAuc{} in the exploratory one-tick subset on later dates.
 
 The included TSLA sessions also fit the scaling form proposed by
 \citet{patzelt2018}. This is a within-sample application to one stock-year, not

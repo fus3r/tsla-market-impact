@@ -60,6 +60,11 @@ struct TimingSummary {
     const std::vector<double>& seconds,
     std::uint64_t events);
 
+void write_queue_imbalance_bins(
+    const Dataset& dataset,
+    const std::filesystem::path& output,
+    std::size_t bins = 101);
+
 [[nodiscard]] std::string replay_audit_json(
     const Dataset& dataset,
     const ReplayMetrics& metrics);

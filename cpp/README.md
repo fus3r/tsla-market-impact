@@ -25,6 +25,26 @@ book unchanged. Snapshot validation separately requires positive prices and
 sizes, increasing ask prices, decreasing bid prices, and a best bid below the
 best ask.
 
+## Queue-imbalance aggregates
+
+For each state with a later same-session mid-price change, the exporter labels
+the direction of that next change and calculates
+
+```text
+I = (best_bid_size - best_ask_size) /
+    (best_bid_size + best_ask_size).
+```
+
+It writes counts by date, state sample, spread regime, and one of 101
+equal-width imbalance bins. The `all_events` sample retains every labelled
+state. The `best_quote_updates` sample retains the session's first displayed
+state and later states only when a best price or size changes. Multiple states
+can share one eventual price-move label, so Python resamples complete trading
+dates rather than treating the states as independent trials.
+
+Only the daily aggregate counts enter Python. Licensed message rows, order
+identifiers, prices, and row-level book states remain local.
+
 ## Annual replay and benchmark
 
 The replay command discovers the level-2 pairs named by the shared
@@ -44,7 +64,8 @@ cmake --build build
   --warmup-runs 2 \
   --replay-runs 11 \
   --machine 'MacBook Pro Mac16,8; Apple M4 Pro; 48 GB; macOS 15.7.7' \
-  --json results/lobster_replay_benchmark.json
+  --json results/lobster_replay_benchmark.json \
+  --queue-bins data/processed/queue-imbalance-bins.csv
 ```
 
 The committed aggregate covers 38,516,432 events. Excluding the 249 session
@@ -58,6 +79,9 @@ The benchmark reports two distinct costs:
 - `decode` maps, parses, validates, and materializes every delivered CSV pair;
 - `in_memory_replay` scans the included resident records, audits transitions,
   validates snapshots, and maintains a checksum.
+
+The queue export is a separate pass after the measured replay and is not
+included in either timing.
 
 The committed Release benchmark used one thread on an Apple M4 Pro. Its
 38,516,432 included events occupy 2,465,051,648 bytes as resident event

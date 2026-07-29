@@ -18,9 +18,11 @@ struct Options {
   std::filesystem::path raw_dir;
   std::filesystem::path analysis_policy{"analysis-policy.conf"};
   std::filesystem::path json_output;
+  std::filesystem::path queue_bins_output;
   int decode_runs{1};
   int replay_runs{7};
   int warmup_runs{1};
+  std::size_t imbalance_bins{101};
   std::string machine;
 };
 
@@ -34,6 +36,8 @@ void print_usage(std::ostream& output) {
       << "  --replay-runs N          Measured resident replay passes (default: 7)\n"
       << "  --warmup-runs N          Unmeasured replay passes (default: 1)\n"
       << "  --json PATH              Write the benchmark record as JSON\n"
+      << "  --queue-bins PATH        Write daily next-move queue aggregates\n"
+      << "  --imbalance-bins N       Queue bins across [-1, 1] (default: 101)\n"
       << "  --machine TEXT           Machine label stored in the benchmark\n"
       << "  --help                   Show this help\n";
 }
@@ -83,6 +87,13 @@ Options parse_options(int argc, char** argv) {
           true);
     } else if (argument == "--json") {
       options.json_output = require_value(argc, argv, index);
+    } else if (argument == "--queue-bins") {
+      options.queue_bins_output = require_value(argc, argv, index);
+    } else if (argument == "--imbalance-bins") {
+      options.imbalance_bins = static_cast<std::size_t>(
+          positive_integer(
+              require_value(argc, argv, index),
+              "imbalance bins"));
     } else if (argument == "--machine") {
       options.machine = require_value(argc, argv, index);
     } else {
@@ -200,6 +211,13 @@ int main(int argc, char** argv) {
     const tsla_lob::TimingSummary replay =
         tsla_lob::summarize_timings(replay_seconds, dataset.events);
     validate_annual_audit(dataset, metrics);
+
+    if (!options.queue_bins_output.empty()) {
+      tsla_lob::write_queue_imbalance_bins(
+          dataset,
+          options.queue_bins_output,
+          options.imbalance_bins);
+    }
 
     const std::string report = tsla_lob::benchmark_json(
         dataset,

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
 #include <iomanip>
 #include <limits>
 #include <map>
@@ -109,6 +110,69 @@ const char* architecture_name() {
 #else
   return "unknown";
 #endif
+}
+
+bool same_best_quote(
+    const BookSnapshot& left,
+    const BookSnapshot& right) {
+  return left.asks[0] == right.asks[0] &&
+         left.bids[0] == right.bids[0];
+}
+
+std::int64_t midpoint_twice(const BookSnapshot& snapshot) {
+  return static_cast<std::int64_t>(snapshot.asks[0].price) +
+         snapshot.bids[0].price;
+}
+
+struct BinCount {
+  std::uint64_t observations{};
+  std::uint64_t up_moves{};
+  std::uint64_t down_moves{};
+};
+
+constexpr std::array<std::string_view, 5> spread_bucket_names = {
+    "all_spreads",
+    "one_tick",
+    "two_to_five_ticks",
+    "six_to_ten_ticks",
+    "over_ten_ticks",
+};
+
+std::size_t spread_bucket(const BookSnapshot& snapshot) {
+  const std::int32_t spread =
+      snapshot.asks[0].price - snapshot.bids[0].price;
+  if (spread <= 100) {
+    return 1;
+  }
+  if (spread <= 500) {
+    return 2;
+  }
+  if (spread <= 1'000) {
+    return 3;
+  }
+  return 4;
+}
+
+std::size_t imbalance_bin(
+    const BookSnapshot& snapshot,
+    std::size_t bins) {
+  const double bid = static_cast<double>(snapshot.bids[0].size);
+  const double ask = static_cast<double>(snapshot.asks[0].size);
+  const double imbalance = (bid - ask) / (bid + ask);
+  const double scaled =
+      (std::clamp(imbalance, -1.0, 1.0) + 1.0) * 0.5;
+  return std::min(
+      bins - 1,
+      static_cast<std::size_t>(scaled * static_cast<double>(bins)));
+}
+
+void accumulate_bin(BinCount& count, int direction) {
+  ++count.observations;
+  if (direction > 0) {
+    ++count.up_moves;
+  } else {
+    ++count.down_moves;
+  }
 }
 
 bool better_price(std::int32_t left, std::int32_t right, bool bids) {
@@ -464,6 +528,107 @@ TimingSummary summarize_timings(
     }
   }
   return summary;
+}
+
+void write_queue_imbalance_bins(
+    const Dataset& dataset,
+    const std::filesystem::path& output,
+    std::size_t bins) {
+  if (bins < 3) {
+    throw std::invalid_argument(
+        "queue-imbalance bin count must be at least 3");
+  }
+  std::ofstream stream(output);
+  if (!stream) {
+    throw std::runtime_error(
+        "cannot write queue-imbalance bins: " + output.string());
+  }
+  stream
+      << "date,sample,spread_bucket,bin,bin_left,bin_right,"
+         "bin_center,observations,up_moves,down_moves\n";
+  stream << std::setprecision(10);
+
+  for (const SessionData& session : dataset.sessions) {
+    std::array<std::vector<BinCount>, spread_bucket_names.size()>
+        all_events;
+    std::array<std::vector<BinCount>, spread_bucket_names.size()>
+        quote_updates;
+    for (std::size_t bucket = 0;
+         bucket < spread_bucket_names.size();
+         ++bucket) {
+      all_events[bucket].resize(bins);
+      quote_updates[bucket].resize(bins);
+    }
+
+    std::size_t run_start = 0;
+    while (run_start < session.events.size()) {
+      const std::int64_t current_mid =
+          midpoint_twice(session.events[run_start].book);
+      std::size_t next_run = run_start + 1;
+      while (
+          next_run < session.events.size() &&
+          midpoint_twice(session.events[next_run].book) == current_mid) {
+        ++next_run;
+      }
+      if (next_run == session.events.size()) {
+        break;
+      }
+      const int direction =
+          midpoint_twice(session.events[next_run].book) > current_mid
+              ? 1
+              : -1;
+      for (std::size_t index = run_start;
+           index < next_run;
+           ++index) {
+        const BookSnapshot& snapshot = session.events[index].book;
+        const std::size_t bin = imbalance_bin(snapshot, bins);
+        const std::size_t bucket = spread_bucket(snapshot);
+        accumulate_bin(all_events[0][bin], direction);
+        accumulate_bin(all_events[bucket][bin], direction);
+        if (
+            index == 0 ||
+            !same_best_quote(
+                session.events[index - 1].book,
+                snapshot)) {
+          accumulate_bin(quote_updates[0][bin], direction);
+          accumulate_bin(quote_updates[bucket][bin], direction);
+        }
+      }
+      run_start = next_run;
+    }
+
+    const auto write_sample = [&](
+                                  std::string_view name,
+                                  const std::array<
+                                      std::vector<BinCount>,
+                                      spread_bucket_names.size()>&
+                                      counts) {
+      for (std::size_t bucket = 0;
+           bucket < spread_bucket_names.size();
+           ++bucket) {
+        for (std::size_t bin = 0; bin < bins; ++bin) {
+          if (counts[bucket][bin].observations == 0) {
+            continue;
+          }
+          const double left =
+              -1.0 + 2.0 * static_cast<double>(bin) /
+                         static_cast<double>(bins);
+          const double right =
+              -1.0 + 2.0 * static_cast<double>(bin + 1) /
+                         static_cast<double>(bins);
+          stream
+              << session.date << ',' << name << ','
+              << spread_bucket_names[bucket] << ',' << bin << ','
+              << left << ',' << right << ',' << (left + right) / 2.0
+              << ',' << counts[bucket][bin].observations << ','
+              << counts[bucket][bin].up_moves << ','
+              << counts[bucket][bin].down_moves << '\n';
+        }
+      }
+    };
+    write_sample("all_events", all_events);
+    write_sample("best_quote_updates", quote_updates);
+  }
 }
 
 std::string replay_audit_json(

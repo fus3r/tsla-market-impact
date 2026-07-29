@@ -1,9 +1,13 @@
-# Signed order count in aggregate price impact
+# TSLA market impact and depth-aware order-book replay
 
-This repository contains my analysis of reconstructed TSLA market orders from
-249 included NASDAQ sessions in 2019. The question is simple: after observing
-signed share volume over a short window, does the number of buyer- and
-seller-initiated orders add information about the mid-price change?
+This repository combines an empirical analysis of reconstructed TSLA market
+orders with a C++20 level-2 replay and audit engine. The source delivery contains
+252 NASDAQ sessions in 2019; the shared source policy retains 249 and declares
+the three unavailable truncated pairs.
+
+The impact question is simple: after observing signed share volume over a short
+window, does the number of buyer- and seller-initiated orders add information
+about the mid-price change?
 
 It does in this sample. The fixed test period begins on 18 October, after 198
 included training dates, and contains 51 dates with no trimming of the response.
@@ -19,6 +23,21 @@ The last model cuts MSE by 27.4% relative to signed volume. A bootstrap over
 complete test dates gives an interval of 26.5% to 28.5% for that reduction.
 Both the order-flow variables and the price change are measured inside the same
 window, so this is a conditional impact model rather than a pre-trade forecast.
+
+The separate queue-imbalance experiment is forward-looking: the displayed
+level-1 state predicts the direction of the next same-session mid-price change.
+The same fixed calendar boundary leaves 198 included training dates and 51 test
+dates.
+
+| Best-quote state sample | Test observations | ROC-AUC | Brier reduction |
+|---|---:|---:|---:|
+| All spreads | 5,489,604 | 0.538 | 0.12% |
+| One-tick spread | 61,829 | 0.626 | 4.69% |
+
+The all-spread interval is -0.03% to 0.29%, so the pooled signal is weak. The
+one-tick interval is 2.32% to 7.00% under 10,000 resamples of complete test
+dates. That spread-conditioned result is exploratory, and a direction score
+before fees, latency, and queue position is not a trading strategy.
 
 The scaling analysis is separate. It applies the curve-collapse construction of
 Patzelt and Bouchaud to this included TSLA 2019 sample. The reported values
@@ -91,14 +110,17 @@ wire-to-wire trading latency.
 
 - `analysis-policy.conf` is the shared Python/C++ source and calendar policy.
 - `cpp/` contains the fixed-width decoder, annual source-integrity gate, replay
-  benchmark, and the [finite-depth transition contract](cpp/README.md).
-- `src/tsla_market_impact/` contains the LOBSTER reconstruction and analysis code.
+  benchmark, daily queue-bin exporter, and the
+  [finite-depth transition contract](cpp/README.md).
+- `src/tsla_market_impact/` contains the LOBSTER reconstruction, impact study,
+  and chronological next-move evaluation.
 - `results/` contains aggregate tables, including the 252-row coverage audit
-  and annual level-2 replay diagnostics and benchmark. Licensed rows are not
-  included.
+  and annual level-2 replay, benchmark, and queue-model results. Licensed rows
+  are not included.
 - `report/` contains the LaTeX source, figures, references, and compiled PDF.
 - `tests/` checks source integrity, data alignment, event-time windows,
-  chronological splits, bootstrap, and scaling fits with synthetic data.
+  chronological splits, complete-date bootstrap, queue evaluation, and scaling
+  fits with synthetic data.
 
 ## Data
 
@@ -182,7 +204,8 @@ Regenerate the annual C++ benchmark after the tests pass:
   --warmup-runs 2 \
   --replay-runs 11 \
   --machine 'MacBook Pro Mac16,8; Apple M4 Pro; 48 GB; macOS 15.7.7' \
-  --json results/lobster_replay_benchmark.json
+  --json results/lobster_replay_benchmark.json \
+  --queue-bins data/processed/queue-imbalance-bins.csv
 ```
 
 The command audits every delivered pair, refuses any undeclared coverage
@@ -190,6 +213,17 @@ failure, filters post-close rows, and exits unsuccessfully if the replay finds
 an observable mismatch, unsupported event, invalid snapshot, or checksum
 disagreement between repetitions. Use a truthful local machine label when
 running it on another host.
+
+Fit the queue model on the first 198 included dates and score the final 51:
+
+```bash
+tsla-impact analyze-queue \
+  --bins data/processed/queue-imbalance-bins.csv
+```
+
+The daily intermediate contains only aggregate counts but remains local. The
+committed JSON, metrics, calibration table, and vector figure are compact
+outputs of that fixed protocol.
 
 ## Origin and credit
 

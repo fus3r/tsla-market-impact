@@ -346,6 +346,75 @@ def plot_scaling_fits(
     return output
 
 
+def plot_queue_imbalance_forecast(
+    calibration: pd.DataFrame,
+    metrics: pd.DataFrame,
+    path: Path | str,
+) -> Path:
+    """Plot chronological next-move calibration by queue imbalance."""
+
+    palette = _style()
+    sample = "best_quote_updates"
+    panels = [
+        ("all_spreads", "All spreads"),
+        ("one_tick", "One-tick spread"),
+    ]
+    figure, axes = plt.subplots(1, 2, figsize=(7.15, 3.25), layout="constrained")
+    for panel, (axis, (bucket, title)) in enumerate(
+        zip(axes, panels, strict=True)
+    ):
+        curve = calibration.loc[
+            calibration["sample"].eq(sample)
+            & calibration["spread_bucket"].eq(bucket)
+        ].sort_values("bin_center")
+        score = metrics.loc[
+            metrics["sample"].eq(sample)
+            & metrics["spread_bucket"].eq(bucket)
+        ].iloc[0]
+        visible = curve.loc[curve["observations"].ge(100)]
+        axis.axhline(0.5, color=palette["line"], linewidth=0.9)
+        axis.plot(
+            curve["bin_center"],
+            curve["model_probability"],
+            color=palette["orange"],
+            linewidth=1.5,
+            label="Train-fitted logistic model",
+        )
+        axis.scatter(
+            visible["bin_center"],
+            visible["empirical_up_probability"],
+            s=10,
+            facecolor=palette["background"],
+            edgecolor=palette["blue"],
+            linewidth=0.8,
+            label="Late-2019 holdout",
+            zorder=3,
+        )
+        axis.set_xlim(-1, 1)
+        axis.set_ylim(0.3, 0.7)
+        axis.set_title(f"({chr(97 + panel)})  {title}", loc="left")
+        axis.set_xlabel("Level-1 queue imbalance")
+        axis.set_ylabel("Probability next mid-price move is up")
+        axis.text(
+            0.04,
+            0.94,
+            (
+                f"AUC = {score['model_roc_auc']:.3f}\n"
+                f"Brier reduction = {100 * score['relative_brier_reduction']:.1f}%"
+            ),
+            transform=axis.transAxes,
+            va="top",
+            color=palette["muted"],
+            fontsize=8.2,
+        )
+        _clean_axis(axis)
+    axes[1].legend(loc="lower right")
+    output = _prepare_path(path)
+    figure.savefig(output, bbox_inches="tight")
+    plt.close(figure)
+    return output
+
+
 def plot_scaling_collapse(
     collapsed: pd.DataFrame,
     shape: dict[str, float],

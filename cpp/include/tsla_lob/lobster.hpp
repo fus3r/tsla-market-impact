@@ -51,6 +51,7 @@ struct Dataset {
   std::vector<SessionData> sessions;
   std::uint64_t delivered_sessions{};
   std::uint64_t declared_source_exclusions{};
+  std::uint64_t input_bytes{};
   std::uint64_t events{};
 };
 

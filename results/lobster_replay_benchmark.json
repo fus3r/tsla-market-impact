@@ -1,0 +1,62 @@
+{
+  "dataset": {
+    "delivered_sessions": 252,
+    "included_sessions": 249,
+    "declared_source_exclusions": 3,
+    "events": 38516432,
+    "input_bytes": 3541678511,
+    "record_bytes": 64,
+    "resident_event_bytes": 2465051648
+  },
+  "environment": {
+    "machine": "MacBook Pro Mac16,8; Apple M4 Pro; 48 GB; macOS 15.7.7",
+    "architecture": "arm64",
+    "compiler": "clang 17.0.0 (clang-1700.4.4.1)",
+    "build_type": "Release"
+  },
+  "protocol": {
+    "decode_runs": 3,
+    "replay_warmup_runs": 2,
+    "replay_measured_runs": 11,
+    "thread_count": 1,
+    "clock": "std::chrono::steady_clock",
+    "filesystem_cache": "not flushed between decode runs"
+  },
+  "audit": {
+    "seeded_sessions": 249,
+    "exact_transitions": 28544808,
+    "depth_censored_transitions": 9971375,
+    "mismatches": 0,
+    "unsupported": 0,
+    "invalid_snapshots": 0,
+    "exact_fraction_of_auditable": 0.741112067102,
+    "depth_censored_fraction_of_auditable": 0.258887932898,
+    "checksum": 10694961792054746546,
+    "events_by_type": {
+      "1": 17309650,
+      "2": 35950,
+      "3": 12531637,
+      "4": 6467058,
+      "5": 2171888,
+      "6": 249
+    }
+  },
+  "timings": {
+    "decode": {
+      "seconds": [10.681642042, 4.436609833, 3.919474125],
+      "median_run_seconds": 4.436609833,
+      "p95_run_seconds": 10.681642042,
+      "median_run_average_ns_per_event": 115.187456434,
+      "p95_run_average_ns_per_event": 277.32688329,
+      "median_throughput_million_events_per_second": 8.68150084182
+    },
+    "in_memory_replay": {
+      "seconds": [0.350555417, 0.353767333, 0.355115625, 0.366123208, 0.356809875, 0.357048292, 0.355543917, 0.353069958, 0.353295167, 0.355811333, 0.353380375],
+      "median_run_seconds": 0.355115625,
+      "p95_run_seconds": 0.366123208,
+      "median_run_average_ns_per_event": 9.21984738877,
+      "p95_run_average_ns_per_event": 9.50563665918,
+      "median_throughput_million_events_per_second": 108.461665127
+    }
+  }
+}

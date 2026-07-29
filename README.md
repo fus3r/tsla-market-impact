@@ -61,14 +61,41 @@ snapshot. The committed
 [`results/lobster_replay_audit.json`](results/lobster_replay_audit.json)
 contains only these aggregate diagnostics and event-type counts.
 
+## C++ annual replay benchmark
+
+The benchmark separates complete CSV decoding from replay over the already
+resident 64-byte event records. The replay audits the same finite-depth
+transitions, validates every snapshot, and maintains a checksum so repeated
+passes cannot silently disagree.
+
+| Annual benchmark | Value |
+|---|---:|
+| Included events | 38,516,432 |
+| Resident event payload | 2.47 GB |
+| Median resident replay | 9.22 ns/event |
+| p95 resident replay | 9.51 ns/event |
+| Median single-thread throughput | 108.46 million events/s |
+| Median CSV decode | 115.19 ns/event |
+
+These figures are from eleven complete measured replay passes after two
+warm-ups on a MacBook Pro with an Apple M4 Pro and 48 GB of memory, built with
+Apple Clang 17 in Release mode. The decoder median is from three complete
+passes. The operating-system page cache was not flushed: the first decode took
+277.33 ns/event, and all three durations remain visible in
+[`results/lobster_replay_benchmark.json`](results/lobster_replay_benchmark.json).
+Each ns/event value is a full-pass duration divided by the event count. The p95
+is therefore a percentile across run averages, not per-event tail latency or
+wire-to-wire trading latency.
+
 ## Files
 
 - `analysis-policy.conf` is the shared Python/C++ source and calendar policy.
-- `cpp/` contains the fixed-width decoder, annual source-integrity and replay
-  audit, and the [finite-depth transition contract](cpp/README.md).
+- `cpp/` contains the fixed-width decoder, annual source-integrity gate, replay
+  benchmark, and the [finite-depth transition contract](cpp/README.md).
 - `src/tsla_market_impact/` contains the LOBSTER reconstruction and analysis code.
 - `results/` contains aggregate tables, including the 252-row coverage audit
-  and annual level-2 replay diagnostic. Licensed rows are not included.
+  and annual level-2 replay diagnostics and benchmark. Licensed rows are not
+  included.
 - `report/` contains the LaTeX source, figures, references, and compiled PDF.
 - `tests/` checks source integrity, data alignment, event-time windows,
   chronological splits, bootstrap, and scaling fits with synthetic data.
@@ -145,18 +172,24 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Regenerate the annual C++ aggregate after the tests pass:
+Regenerate the annual C++ benchmark after the tests pass:
 
 ```bash
 ./build/lobster_replay \
   --raw-dir data/raw/TSLA \
   --analysis-policy analysis-policy.conf \
-  --json results/lobster_replay_audit.json
+  --decode-runs 3 \
+  --warmup-runs 2 \
+  --replay-runs 11 \
+  --machine 'MacBook Pro Mac16,8; Apple M4 Pro; 48 GB; macOS 15.7.7' \
+  --json results/lobster_replay_benchmark.json
 ```
 
 The command audits every delivered pair, refuses any undeclared coverage
 failure, filters post-close rows, and exits unsuccessfully if the replay finds
-an observable mismatch, unsupported event, or invalid snapshot.
+an observable mismatch, unsupported event, invalid snapshot, or checksum
+disagreement between repetitions. Use a truthful local machine label when
+running it on another host.
 
 ## Origin and credit
 

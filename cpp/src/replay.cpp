@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iomanip>
 #include <limits>
 #include <map>
 #include <regex>
@@ -34,6 +36,79 @@ std::string regex_escape(const std::string& text) {
     escaped.push_back(character);
   }
   return escaped;
+}
+
+double median(std::vector<double> values) {
+  if (values.empty()) {
+    return 0.0;
+  }
+  std::sort(values.begin(), values.end());
+  const std::size_t middle = values.size() / 2;
+  if (values.size() % 2 == 0) {
+    return (values[middle - 1] + values[middle]) / 2.0;
+  }
+  return values[middle];
+}
+
+double percentile95(std::vector<double> values) {
+  if (values.empty()) {
+    return 0.0;
+  }
+  std::sort(values.begin(), values.end());
+  const double rank = std::ceil(0.95 * static_cast<double>(values.size()));
+  const std::size_t index =
+      std::min(
+          values.size() - 1,
+          static_cast<std::size_t>(std::max(1.0, rank)) - 1);
+  return values[index];
+}
+
+std::string json_escape(const std::string& value) {
+  std::ostringstream escaped;
+  for (const char character : value) {
+    switch (character) {
+      case '\\':
+        escaped << "\\\\";
+        break;
+      case '"':
+        escaped << "\\\"";
+        break;
+      case '\n':
+        escaped << "\\n";
+        break;
+      case '\r':
+        escaped << "\\r";
+        break;
+      case '\t':
+        escaped << "\\t";
+        break;
+      default:
+        escaped << character;
+    }
+  }
+  return escaped.str();
+}
+
+const char* compiler_name() {
+#if defined(__clang__)
+  return "clang " __clang_version__;
+#elif defined(__GNUC__)
+  return "gcc " __VERSION__;
+#elif defined(_MSC_VER)
+  return "msvc";
+#else
+  return "unknown";
+#endif
+}
+
+const char* architecture_name() {
+#if defined(__aarch64__) || defined(__arm64__) || defined(_M_ARM64)
+  return "arm64";
+#elif defined(__x86_64__) || defined(_M_X64)
+  return "x86_64";
+#else
+  return "unknown";
+#endif
 }
 
 bool better_price(std::int32_t left, std::int32_t right, bool bids) {
@@ -227,6 +302,11 @@ Dataset load_dataset(
       throw std::runtime_error(
           "session coverage count changed while filtering " + files.date);
     }
+    dataset.input_bytes +=
+        static_cast<std::uint64_t>(
+            std::filesystem::file_size(files.message_path)) +
+        static_cast<std::uint64_t>(
+            std::filesystem::file_size(files.book_path));
     dataset.events += static_cast<std::uint64_t>(events.size());
     dataset.sessions.push_back({files.date, std::move(events)});
   }
@@ -308,6 +388,15 @@ bool valid_snapshot(const BookSnapshot& snapshot) noexcept {
 
 ReplayMetrics replay_dataset(const Dataset& dataset) {
   ReplayMetrics metrics;
+  constexpr std::uint64_t fnv_offset = 14'695'981'039'346'656'037ULL;
+  constexpr std::uint64_t fnv_prime = 1'099'511'628'211ULL;
+  metrics.checksum = fnv_offset;
+
+  auto mix = [&metrics](std::uint64_t value) {
+    metrics.checksum ^= value;
+    metrics.checksum *= fnv_prime;
+  };
+
   for (const SessionData& session : dataset.sessions) {
     if (session.events.empty()) {
       continue;
@@ -344,10 +433,37 @@ ReplayMetrics replay_dataset(const Dataset& dataset) {
             break;
         }
       }
+      mix(record.message.timestamp_ns);
+      mix(static_cast<std::uint64_t>(record.message.order_id));
+      mix(static_cast<std::uint32_t>(record.book.asks[0].price));
+      mix(static_cast<std::uint32_t>(record.book.asks[0].size));
+      mix(static_cast<std::uint32_t>(record.book.bids[0].price));
+      mix(static_cast<std::uint32_t>(record.book.bids[0].size));
       previous = &record.book;
     }
   }
   return metrics;
+}
+
+TimingSummary summarize_timings(
+    const std::vector<double>& seconds,
+    std::uint64_t events) {
+  TimingSummary summary;
+  summary.seconds = seconds;
+  summary.median_seconds = median(seconds);
+  summary.p95_seconds = percentile95(seconds);
+  if (events > 0) {
+    const double observations = static_cast<double>(events);
+    summary.median_ns_per_event =
+        summary.median_seconds * 1e9 / observations;
+    summary.p95_ns_per_event =
+        summary.p95_seconds * 1e9 / observations;
+    if (summary.median_seconds > 0.0) {
+      summary.median_million_events_per_second =
+          observations / summary.median_seconds / 1e6;
+    }
+  }
+  return summary;
 }
 
 std::string replay_audit_json(
@@ -395,6 +511,142 @@ std::string replay_audit_json(
   }
   output
       << "    }\n"
+      << "  }\n"
+      << "}\n";
+  return output.str();
+}
+
+std::string benchmark_json(
+    const Dataset& dataset,
+    const ReplayMetrics& metrics,
+    const TimingSummary& decode,
+    const TimingSummary& replay,
+    int decode_runs,
+    int replay_runs,
+    int warmup_runs,
+    const std::string& machine) {
+  const std::uint64_t auditable =
+      metrics.events >= metrics.seeded_sessions
+          ? metrics.events - metrics.seeded_sessions
+          : 0;
+  const double exact_fraction =
+      auditable > 0
+          ? static_cast<double>(metrics.exact_transitions) /
+                static_cast<double>(auditable)
+          : 0.0;
+  const double censored_fraction =
+      auditable > 0
+          ? static_cast<double>(metrics.depth_censored_transitions) /
+                static_cast<double>(auditable)
+          : 0.0;
+
+  auto timing_json = [](
+      std::ostringstream& output,
+      const TimingSummary& timing) {
+    output
+        << "{\n"
+        << "      \"seconds\": [";
+    for (std::size_t index = 0; index < timing.seconds.size(); ++index) {
+      if (index != 0) {
+        output << ", ";
+      }
+      output << timing.seconds[index];
+    }
+    output
+        << "],\n"
+        << "      \"median_run_seconds\": "
+        << timing.median_seconds << ",\n"
+        << "      \"p95_run_seconds\": "
+        << timing.p95_seconds << ",\n"
+        << "      \"median_run_average_ns_per_event\": "
+        << timing.median_ns_per_event << ",\n"
+        << "      \"p95_run_average_ns_per_event\": "
+        << timing.p95_ns_per_event << ",\n"
+        << "      \"median_throughput_million_events_per_second\": "
+        << timing.median_million_events_per_second << "\n"
+        << "    }";
+  };
+
+  std::ostringstream output;
+  output << std::setprecision(12);
+  output
+      << "{\n"
+      << "  \"dataset\": {\n"
+      << "    \"delivered_sessions\": "
+      << dataset.delivered_sessions << ",\n"
+      << "    \"included_sessions\": "
+      << dataset.sessions.size() << ",\n"
+      << "    \"declared_source_exclusions\": "
+      << dataset.declared_source_exclusions << ",\n"
+      << "    \"events\": " << dataset.events << ",\n"
+      << "    \"input_bytes\": " << dataset.input_bytes << ",\n"
+      << "    \"record_bytes\": " << sizeof(EventRecord) << ",\n"
+      << "    \"resident_event_bytes\": "
+      << dataset.events * sizeof(EventRecord) << "\n"
+      << "  },\n"
+      << "  \"environment\": {\n"
+      << "    \"machine\": \"" << json_escape(machine) << "\",\n"
+      << "    \"architecture\": \"" << architecture_name() << "\",\n"
+      << "    \"compiler\": \"" << json_escape(compiler_name()) << "\",\n"
+#ifdef NDEBUG
+      << "    \"build_type\": \"Release\"\n"
+#else
+      << "    \"build_type\": \"Debug\"\n"
+#endif
+      << "  },\n"
+      << "  \"protocol\": {\n"
+      << "    \"decode_runs\": " << decode_runs << ",\n"
+      << "    \"replay_warmup_runs\": " << warmup_runs << ",\n"
+      << "    \"replay_measured_runs\": " << replay_runs << ",\n"
+      << "    \"thread_count\": 1,\n"
+      << "    \"clock\": \"std::chrono::steady_clock\",\n"
+      << "    \"filesystem_cache\": "
+         "\"not flushed between decode runs\"\n"
+      << "  },\n"
+      << "  \"audit\": {\n"
+      << "    \"seeded_sessions\": "
+      << metrics.seeded_sessions << ",\n"
+      << "    \"exact_transitions\": "
+      << metrics.exact_transitions << ",\n"
+      << "    \"depth_censored_transitions\": "
+      << metrics.depth_censored_transitions << ",\n"
+      << "    \"mismatches\": " << metrics.mismatches << ",\n"
+      << "    \"unsupported\": " << metrics.unsupported << ",\n"
+      << "    \"invalid_snapshots\": "
+      << metrics.invalid_snapshots << ",\n"
+      << "    \"exact_fraction_of_auditable\": "
+      << exact_fraction << ",\n"
+      << "    \"depth_censored_fraction_of_auditable\": "
+      << censored_fraction << ",\n"
+      << "    \"checksum\": " << metrics.checksum << ",\n"
+      << "    \"events_by_type\": {\n";
+  bool first_type = true;
+  for (std::size_t type = 1;
+       type < metrics.events_by_type.size();
+       ++type) {
+    if (metrics.events_by_type[type] == 0) {
+      continue;
+    }
+    if (!first_type) {
+      output << ",\n";
+    }
+    output
+        << "      \"" << type << "\": "
+        << metrics.events_by_type[type];
+    first_type = false;
+  }
+  output
+      << "\n    }\n"
+      << "  },\n"
+      << "  \"timings\": {\n"
+      << "    \"decode\": ";
+  timing_json(output, decode);
+  output
+      << ",\n"
+      << "    \"in_memory_replay\": ";
+  timing_json(output, replay);
+  output
+      << "\n"
       << "  }\n"
       << "}\n";
   return output.str();

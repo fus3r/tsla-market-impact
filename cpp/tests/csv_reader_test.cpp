@@ -376,6 +376,8 @@ void test_replay_aggregation() {
 
   const tsla_lob::ReplayMetrics metrics =
       tsla_lob::replay_dataset(dataset);
+  const tsla_lob::ReplayMetrics repeated =
+      tsla_lob::replay_dataset(dataset);
   CHECK(metrics.events == 6);
   CHECK(metrics.seeded_sessions == 2);
   CHECK(metrics.exact_transitions == 1);
@@ -388,6 +390,14 @@ void test_replay_aggregation() {
   CHECK(metrics.events_by_type[4] == 1);
   CHECK(metrics.events_by_type[5] == 1);
   CHECK(metrics.events_by_type[6] == 1);
+  CHECK(metrics.checksum != 0);
+  CHECK(repeated.checksum == metrics.checksum);
+
+  tsla_lob::Dataset changed = dataset;
+  changed.sessions[0].events[0].message.order_id = 1;
+  CHECK(
+      tsla_lob::replay_dataset(changed).checksum !=
+      metrics.checksum);
 
   const std::string expected_json =
       "{\n"
@@ -417,6 +427,45 @@ void test_replay_aggregation() {
       "  }\n"
       "}\n";
   CHECK(tsla_lob::replay_audit_json(dataset, metrics) == expected_json);
+
+  dataset.input_bytes = 1'024;
+  const tsla_lob::TimingSummary decode =
+      tsla_lob::summarize_timings({2.0, 1.0, 3.0}, 1'000'000'000);
+  const tsla_lob::TimingSummary replay =
+      tsla_lob::summarize_timings({5.0, 4.0, 6.0}, 1'000'000'000);
+  CHECK(decode.seconds == std::vector<double>({2.0, 1.0, 3.0}));
+  CHECK(decode.median_seconds == 2.0);
+  CHECK(decode.p95_seconds == 3.0);
+  CHECK(decode.median_ns_per_event == 2.0);
+  CHECK(decode.p95_ns_per_event == 3.0);
+  CHECK(decode.median_million_events_per_second == 500.0);
+
+  const std::string benchmark = tsla_lob::benchmark_json(
+      dataset,
+      metrics,
+      decode,
+      replay,
+      3,
+      3,
+      2,
+      "fixture \"host\"");
+  CHECK(
+      benchmark.find("\"resident_event_bytes\": 384") !=
+      std::string::npos);
+  CHECK(
+      benchmark.find("\"machine\": \"fixture \\\"host\\\"\"") !=
+      std::string::npos);
+  CHECK(
+      benchmark.find("\"thread_count\": 1") !=
+      std::string::npos);
+  CHECK(
+      benchmark.find("\"seconds\": [2, 1, 3]") !=
+      std::string::npos);
+  CHECK(
+      benchmark.find(
+          "\"filesystem_cache\": "
+          "\"not flushed between decode runs\"") !=
+      std::string::npos);
 }
 
 }  // namespace

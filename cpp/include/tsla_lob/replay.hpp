@@ -27,6 +27,16 @@ struct ReplayMetrics {
   std::uint64_t mismatches{};
   std::uint64_t unsupported{};
   std::uint64_t invalid_snapshots{};
+  std::uint64_t checksum{};
+};
+
+struct TimingSummary {
+  std::vector<double> seconds;
+  double median_seconds{};
+  double p95_seconds{};
+  double median_ns_per_event{};
+  double p95_ns_per_event{};
+  double median_million_events_per_second{};
 };
 
 [[nodiscard]] std::vector<SessionFiles> discover_sessions(
@@ -46,8 +56,22 @@ struct ReplayMetrics {
 
 [[nodiscard]] bool valid_snapshot(const BookSnapshot& snapshot) noexcept;
 
+[[nodiscard]] TimingSummary summarize_timings(
+    const std::vector<double>& seconds,
+    std::uint64_t events);
+
 [[nodiscard]] std::string replay_audit_json(
     const Dataset& dataset,
     const ReplayMetrics& metrics);
+
+[[nodiscard]] std::string benchmark_json(
+    const Dataset& dataset,
+    const ReplayMetrics& metrics,
+    const TimingSummary& decode,
+    const TimingSummary& replay,
+    int decode_runs,
+    int replay_runs,
+    int warmup_runs,
+    const std::string& machine);
 
 }  // namespace tsla_lob

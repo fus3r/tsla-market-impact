@@ -54,4 +54,15 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/cpp/tests/fixtures
       ${CMAKE_CURRENT_SOURCE_DIR}/analysis-policy.conf
   )
+
+  add_test(
+    NAME lobster_replay_cli_test
+    COMMAND
+      ${CMAKE_COMMAND}
+      -DLOBSTER_REPLAY=$<TARGET_FILE:lobster_replay>
+      -DFIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/lobster
+      -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-test
+      -DANALYSIS_POLICY=${CMAKE_CURRENT_SOURCE_DIR}/analysis-policy.conf
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/cpp/tests/cli_test.cmake
+  )
 endif()

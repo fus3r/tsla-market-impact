@@ -120,7 +120,7 @@ wire-to-wire trading latency.
 - `report/` contains the LaTeX source, figures, references, and compiled PDF.
 - `tests/` checks source integrity, data alignment, event-time windows,
   chronological splits, complete-date bootstrap, queue evaluation, and scaling
-  fits with synthetic data.
+  fits, plus a complete CLI run on a hand-written redistributable session.
 
 ## Data
 
@@ -186,7 +186,8 @@ ruff check .
 pytest
 ```
 
-The C++ source-policy and decoder checks use only synthetic fixtures:
+The C++ source-policy, decoder, and end-to-end CLI checks use only synthetic
+fixtures:
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release

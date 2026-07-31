@@ -1,3 +1,3 @@
 model,features,test_mse_bps_squared,test_rmse_bps,test_mae_bps,test_r_squared,test_sign_accuracy
-OLS count transforms,"volume_imbalance, order_flow_imbalance, abs_volume_imbalance, signed_sqrt_volume_imbalance, signed_log_volume_imbalance, abs_order_flow_imbalance, signed_sqrt_order_flow_imbalance",9.689354040876353,3.1127727255417077,2.3550950165798032,0.3090509652004636,0.7849265813631159
-OLS signed volume,volume_imbalance,12.423012293491464,3.524629383848955,2.455591960541836,0.11411345717383325,0.7699013719542815
+OLS volume and count,"volume_imbalance, abs_volume_imbalance, signed_sqrt_volume_imbalance, signed_log_volume_imbalance, order_flow_imbalance",9.713186762953185,3.116598588678559,2.3571411234362567,0.3073514508421109,0.7848864070064078
+OLS volume transforms,"volume_imbalance, abs_volume_imbalance, signed_sqrt_volume_imbalance, signed_log_volume_imbalance",10.086949424048557,3.1759958161257953,2.3500488736491403,0.28069838926148605,0.7695398027439085

@@ -108,9 +108,9 @@ def plot_holdout_calibration(
     """Plot observed against fitted holdout impact by prediction quantile."""
 
     palette = _style()
-    models = ["OLS signed volume", "OLS count transforms"]
+    models = ["OLS volume transforms", "OLS volume and count"]
     colors = [palette["blue"], palette["orange"]]
-    labels = ["Signed volume", "Volume and signed count"]
+    labels = ["Volume transforms", "Plus raw signed count"]
     figure, axes = plt.subplots(1, 2, figsize=(7.15, 3.25), layout="constrained")
     combined = calibration.loc[calibration["model"].isin(models)]
     lower = float(
@@ -244,13 +244,13 @@ def plot_horizon_robustness(metrics: pd.DataFrame, path: Path | str) -> Path:
 
 
 def plot_walk_forward(results: pd.DataFrame, path: Path | str) -> Path:
-    """Plot baseline and augmented R-squared across expanding test folds."""
+    """Plot volume-only and raw-count R-squared across expanding test folds."""
 
     palette = _style()
     figure, axis = plt.subplots(figsize=(7.15, 3.35), layout="constrained")
     for model, label, color in [
-        ("OLS signed volume", "Signed volume", palette["blue"]),
-        ("OLS count transforms", "Volume and signed count", palette["orange"]),
+        ("OLS volume transforms", "Volume transforms", palette["green"]),
+        ("OLS volume and count", "Plus raw signed count", palette["orange"]),
     ]:
         part = results.loc[results["model"].eq(model)].sort_values("fold")
         axis.plot(
@@ -263,7 +263,7 @@ def plot_walk_forward(results: pd.DataFrame, path: Path | str) -> Path:
             label=label,
         )
     labels = (
-        results.loc[results["model"].eq("OLS signed volume")]
+        results.loc[results["model"].eq("OLS volume transforms")]
         .sort_values("fold")["test_first_date"]
         .str.slice(5, 10)
         .tolist()

@@ -35,6 +35,7 @@ from .plots import (
     plot_scaling_fits,
     plot_walk_forward,
 )
+from .policy import AnalysisPolicy, validate_analysis_universe
 from .scaling import (
     DEFAULT_HORIZONS,
     collapse_curve,
@@ -104,8 +105,8 @@ def _monthly_scores(
     for month, part in frame.groupby("month", sort=True, observed=True):
         y = part["impact_cents"].to_numpy(dtype=float)
         for model, column in [
-            (BASELINE_MODEL, "baseline_prediction"),
-            (AUGMENTED_MODEL, "augmented_prediction"),
+            (VOLUME_MODEL, "baseline_prediction"),
+            (COUNT_MODEL, "augmented_prediction"),
         ]:
             rows.append(
                 {
@@ -168,16 +169,24 @@ def run_analysis(
     scaling_path: Path | str,
     results_dir: Path | str,
     figures_dir: Path | str,
-    test_start_date: str | None = None,
+    analysis_policy: AnalysisPolicy,
 ) -> dict[str, object]:
     """Run the study and write aggregate tables and report figures."""
+
+    visible = pd.read_parquet(visible_path, columns=VISIBLE_COLUMNS)
+    visible_dates = validate_analysis_universe(visible["date"], analysis_policy)
+    scaling_dates = validate_analysis_universe(
+        pd.read_parquet(scaling_path, columns=["date"])["date"],
+        analysis_policy,
+    )
+    if visible_dates != scaling_dates:
+        raise ValueError("Visible-order and scaling inputs use different calendars")
 
     output = Path(results_dir)
     output.mkdir(parents=True, exist_ok=True)
     figures = Path(figures_dir)
     figures.mkdir(parents=True, exist_ok=True)
 
-    visible = pd.read_parquet(visible_path, columns=VISIBLE_COLUMNS)
     windows = aggregate_prediction_windows(
         visible,
         horizons=(5, 10, 20, 50, 100),
@@ -199,7 +208,7 @@ def run_analysis(
     train, test = temporal_train_test_split(
         impact_data,
         test_date_fraction=0.20,
-        test_start_date=test_start_date,
+        test_start_date=analysis_policy.test_start,
     )
     model_metrics, fitted = evaluate_impact_models(train, test)
     metric_columns = [
@@ -218,12 +227,12 @@ def run_analysis(
     basis_point_train, basis_point_test = temporal_train_test_split(
         basis_point_data,
         test_date_fraction=0.20,
-        test_start_date=test_start_date,
+        test_start_date=analysis_policy.test_start,
     )
     basis_point_metrics, _ = evaluate_impact_models(
         basis_point_train,
         basis_point_test,
-        _selected_specifications({BASELINE_MODEL, AUGMENTED_MODEL}),
+        _selected_specifications({VOLUME_MODEL, COUNT_MODEL}),
     )
     basis_point_metrics.rename(
         columns={
@@ -243,47 +252,39 @@ def run_analysis(
         ]
     ].to_csv(output / "basis_point_robustness.csv", index=False)
 
-    baseline_features = next(
-        specification["features"]
-        for specification in model_specifications()
-        if specification["name"] == BASELINE_MODEL
-    )
     volume_features = next(
         specification["features"]
         for specification in model_specifications()
         if specification["name"] == VOLUME_MODEL
     )
-    augmented_features = next(
+    count_features = next(
         specification["features"]
         for specification in model_specifications()
-        if specification["name"] == AUGMENTED_MODEL
-    )
-    baseline_prediction = fitted[BASELINE_MODEL].predict(
-        test[baseline_features].to_numpy(dtype=float)
+        if specification["name"] == COUNT_MODEL
     )
     volume_prediction = fitted[VOLUME_MODEL].predict(
         test[volume_features].to_numpy(dtype=float)
     )
-    augmented_prediction = fitted[AUGMENTED_MODEL].predict(
-        test[augmented_features].to_numpy(dtype=float)
+    count_prediction = fitted[COUNT_MODEL].predict(
+        test[count_features].to_numpy(dtype=float)
     )
     bootstrap = day_cluster_bootstrap_improvement(
         test,
-        baseline_prediction,
-        augmented_prediction,
+        volume_prediction,
+        count_prediction,
         replicates=10_000,
         random_state=42,
     )
     calibration = calibration_curve(
         test["impact_cents"].to_numpy(dtype=float),
         {
-            BASELINE_MODEL: baseline_prediction,
-            AUGMENTED_MODEL: augmented_prediction,
+            VOLUME_MODEL: volume_prediction,
+            COUNT_MODEL: count_prediction,
         },
         quantiles=20,
     )
     count_residuals = residual_curve_by_count(test, volume_prediction)
-    monthly = _monthly_scores(test, baseline_prediction, augmented_prediction)
+    monthly = _monthly_scores(test, volume_prediction, count_prediction)
     calibration.to_csv(output / "holdout_calibration.csv", index=False)
     count_residuals.to_csv(output / "holdout_count_residuals.csv", index=False)
     monthly.to_csv(output / "monthly_holdout.csv", index=False)
@@ -297,11 +298,14 @@ def run_analysis(
     trimmed_metrics, _ = evaluate_impact_models(trimmed_train, trimmed_test)
     trimmed_metrics[metric_columns].to_csv(output / "model_metrics_trimmed.csv", index=False)
 
-    horizon_metrics = _horizon_scores(windows, test_start_date=test_start_date)
+    horizon_metrics = _horizon_scores(
+        windows,
+        test_start_date=analysis_policy.test_start,
+    )
     horizon_metrics.to_csv(output / "horizon_robustness.csv", index=False)
     walk_forward = evaluate_expanding_splits(
         impact_data,
-        _selected_specifications({BASELINE_MODEL, AUGMENTED_MODEL}),
+        _selected_specifications({VOLUME_MODEL, COUNT_MODEL}),
         n_splits=5,
         initial_train_fraction=0.40,
     )
@@ -332,17 +336,23 @@ def run_analysis(
     kyle_decay = fit_kyle_decay(kyle_lambdas)
     kyle_lambdas.to_csv(output / "kyle_lambdas.csv", index=False)
 
-    baseline = model_metrics.loc[model_metrics["model"].eq(BASELINE_MODEL)].iloc[0]
-    augmented = model_metrics.loc[model_metrics["model"].eq(AUGMENTED_MODEL)].iloc[0]
+    linear_baseline = model_metrics.loc[
+        model_metrics["model"].eq(BASELINE_MODEL)
+    ].iloc[0]
+    baseline = model_metrics.loc[model_metrics["model"].eq(VOLUME_MODEL)].iloc[0]
+    augmented = model_metrics.loc[model_metrics["model"].eq(COUNT_MODEL)].iloc[0]
+    full_model = model_metrics.loc[
+        model_metrics["model"].eq(AUGMENTED_MODEL)
+    ].iloc[0]
     trimmed_baseline = trimmed_metrics.loc[trimmed_metrics["model"].eq(BASELINE_MODEL)].iloc[0]
     trimmed_augmented = trimmed_metrics.loc[
         trimmed_metrics["model"].eq(AUGMENTED_MODEL)
     ].iloc[0]
     basis_point_baseline = basis_point_metrics.loc[
-        basis_point_metrics["model"].eq(BASELINE_MODEL)
+        basis_point_metrics["model"].eq(VOLUME_MODEL)
     ].iloc[0]
     basis_point_augmented = basis_point_metrics.loc[
-        basis_point_metrics["model"].eq(AUGMENTED_MODEL)
+        basis_point_metrics["model"].eq(COUNT_MODEL)
     ].iloc[0]
     relative_mse_reduction = 1 - (
         augmented["test_mse_cents_squared"] / baseline["test_mse_cents_squared"]
@@ -352,8 +362,8 @@ def run_analysis(
     horizon_summary = []
     for horizon in sorted(horizon_metrics["horizon"].unique()):
         part = horizon_metrics.loc[horizon_metrics["horizon"].eq(horizon)]
-        base = part.loc[part["model"].eq(BASELINE_MODEL)].iloc[0]
-        full = part.loc[part["model"].eq(AUGMENTED_MODEL)].iloc[0]
+        base = part.loc[part["model"].eq(VOLUME_MODEL)].iloc[0]
+        full = part.loc[part["model"].eq(COUNT_MODEL)].iloc[0]
         horizon_summary.append(
             {
                 "horizon": int(horizon),
@@ -386,10 +396,17 @@ def run_analysis(
             "test_observations": len(test),
             "baseline": _score_record(baseline),
             "augmented": _score_record(augmented),
+            "linear_signed_volume_reference": _score_record(linear_baseline),
+            "count_transform_reference": _score_record(full_model),
             "delta_r_squared": _number(
                 augmented["test_r_squared"] - baseline["test_r_squared"]
             ),
             "relative_mse_reduction": _number(relative_mse_reduction),
+            "total_relative_mse_reduction_vs_linear_reference": _number(
+                1
+                - full_model["test_mse_cents_squared"]
+                / linear_baseline["test_mse_cents_squared"]
+            ),
             "day_cluster_bootstrap": bootstrap,
             "feature_ablation": [
                 _score_record(row)
@@ -409,6 +426,7 @@ def run_analysis(
                 ),
             },
             "trimmed_reference_protocol": {
+                "comparison": "signed-volume OLS to full count transforms",
                 "bounds": trimmed_bounds,
                 "train_observations": len(trimmed_train),
                 "test_observations": len(trimmed_test),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -19,6 +20,9 @@ class AnalysisPolicy:
     maximum_session_end_gap_seconds: float
     expected_delivered_sessions: int
     expected_included_sessions: int
+    expected_development_sessions: int
+    expected_selection_sessions: int
+    expected_test_sessions: int
     source_exclusions: frozenset[str]
     early_closes_seconds: dict[str, float]
     development_end: str
@@ -50,6 +54,9 @@ def load_analysis_policy(path: Path | str = DEFAULT_ANALYSIS_POLICY) -> Analysis
         "maximum_session_end_gap_seconds",
         "expected_delivered_sessions",
         "expected_included_sessions",
+        "expected_development_sessions",
+        "expected_selection_sessions",
+        "expected_test_sessions",
         "source_exclusion",
         "early_close",
         "development_end",
@@ -98,6 +105,9 @@ def load_analysis_policy(path: Path | str = DEFAULT_ANALYSIS_POLICY) -> Analysis
         "maximum_session_end_gap_seconds",
         "expected_delivered_sessions",
         "expected_included_sessions",
+        "expected_development_sessions",
+        "expected_selection_sessions",
+        "expected_test_sessions",
         "development_end",
         "selection_start",
         "selection_end",
@@ -117,12 +127,21 @@ def load_analysis_policy(path: Path | str = DEFAULT_ANALYSIS_POLICY) -> Analysis
         raise ValueError("maximum_session_end_gap_seconds must be positive")
     expected_delivered = int(values["expected_delivered_sessions"])
     expected_included = int(values["expected_included_sessions"])
+    expected_development = int(values["expected_development_sessions"])
+    expected_selection = int(values["expected_selection_sessions"])
+    expected_test = int(values["expected_test_sessions"])
     if (
         expected_included < 1
         or expected_delivered <= expected_included
         or expected_delivered - expected_included != len(exclusions)
     ):
         raise ValueError("Analysis policy session counts are inconsistent")
+    if (
+        min(expected_development, expected_selection, expected_test) < 0
+        or expected_development + expected_selection + expected_test
+        != expected_included
+    ):
+        raise ValueError("Analysis policy evaluation counts are inconsistent")
     development_end = _iso_date(values["development_end"], "development_end")
     selection_start = _iso_date(values["selection_start"], "selection_start")
     selection_end = _iso_date(values["selection_end"], "selection_end")
@@ -137,6 +156,9 @@ def load_analysis_policy(path: Path | str = DEFAULT_ANALYSIS_POLICY) -> Analysis
         maximum_session_end_gap_seconds=maximum_gap,
         expected_delivered_sessions=expected_delivered,
         expected_included_sessions=expected_included,
+        expected_development_sessions=expected_development,
+        expected_selection_sessions=expected_selection,
+        expected_test_sessions=expected_test,
         source_exclusions=frozenset(exclusions),
         early_closes_seconds=early_closes,
         development_end=development_end,
@@ -170,3 +192,60 @@ def split_index_for_test_start(dates: list[str], test_start: str) -> int:
     if split == 0:
         raise ValueError("Fixed test boundary leaves no training date")
     return split
+
+
+def validate_analysis_universe(
+    values: Iterable[object],
+    policy: AnalysisPolicy,
+) -> list[str]:
+    """Require an aggregate input to match the declared evaluation calendar."""
+
+    observed: set[str] = set()
+    for value in values:
+        normalized = _iso_date(str(value), "analysis input")
+        if date.fromisoformat(normalized).year != policy.year:
+            raise ValueError(
+                f"Analysis input date {normalized} is outside policy year {policy.year}"
+            )
+        observed.add(normalized)
+
+    excluded = sorted(observed & policy.source_exclusions)
+    if excluded:
+        raise ValueError(f"Analysis input contains declared source exclusions: {excluded}")
+    if len(observed) != policy.expected_included_sessions:
+        raise ValueError(
+            "Analysis input session count mismatch: "
+            f"expected {policy.expected_included_sessions}, observed {len(observed)}"
+        )
+
+    required_boundaries = {
+        policy.development_end,
+        policy.selection_start,
+        policy.selection_end,
+        policy.test_start,
+    }
+    missing_boundaries = sorted(required_boundaries - observed)
+    if missing_boundaries:
+        raise ValueError(
+            f"Analysis input is missing policy boundary sessions: {missing_boundaries}"
+        )
+
+    development = sum(value <= policy.development_end for value in observed)
+    selection = sum(
+        policy.selection_start <= value <= policy.selection_end for value in observed
+    )
+    test = sum(value >= policy.test_start for value in observed)
+    assigned = development + selection + test
+    expected = (
+        policy.expected_development_sessions,
+        policy.expected_selection_sessions,
+        policy.expected_test_sessions,
+    )
+    observed_counts = (development, selection, test)
+    if assigned != len(observed) or observed_counts != expected:
+        raise ValueError(
+            "Analysis input evaluation calendar mismatch: "
+            f"expected development/selection/test {expected}, "
+            f"observed {observed_counts}"
+        )
+    return sorted(observed)

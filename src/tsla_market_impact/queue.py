@@ -12,7 +12,11 @@ from sklearn.metrics import log_loss, roc_auc_score
 
 from .data import required_columns
 from .plots import plot_queue_imbalance_forecast
-from .policy import split_index_for_test_start
+from .policy import (
+    AnalysisPolicy,
+    split_index_for_test_start,
+    validate_analysis_universe,
+)
 
 QUEUE_BIN_COLUMNS = [
     "date",
@@ -227,14 +231,16 @@ def run_queue_analysis(
     bins_path: Path | str,
     results_dir: Path | str,
     figures_dir: Path | str,
-    test_start_date: str,
+    *,
+    analysis_policy: AnalysisPolicy,
 ) -> dict[str, object]:
     """Evaluate queue imbalance and persist aggregate tables."""
 
     bins = pd.read_csv(bins_path)
+    validate_analysis_universe(bins["date"], analysis_policy)
     metrics, calibration, result = evaluate_queue_imbalance(
         bins,
-        test_start_date=test_start_date,
+        test_start_date=analysis_policy.test_start,
     )
     output = Path(results_dir)
     output.mkdir(parents=True, exist_ok=True)

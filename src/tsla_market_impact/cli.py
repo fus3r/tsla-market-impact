@@ -89,14 +89,14 @@ def main() -> None:
             args.scaling,
             args.results,
             args.figures,
-            test_start_date=policy.test_start,
+            analysis_policy=policy,
         )
     elif args.command == "analyze-queue":
         result = run_queue_analysis(
             args.bins,
             args.results,
             args.figures,
-            test_start_date=policy.test_start,
+            analysis_policy=policy,
         )
     print(json.dumps(result, indent=2))
 

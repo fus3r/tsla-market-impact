@@ -11,6 +11,7 @@ from tsla_market_impact.data import (
     read_visible_executions,
     run_session_coverage_audit,
 )
+from tsla_market_impact.policy import AnalysisPolicy, validate_analysis_universe
 
 
 def _analysis_policy(path: Path, exclusions: tuple[str, ...]) -> Path:
@@ -27,6 +28,9 @@ def _analysis_policy(path: Path, exclusions: tuple[str, ...]) -> Path:
                 "maximum_session_end_gap_seconds=60",
                 "expected_delivered_sessions=2",
                 "expected_included_sessions=1",
+                "expected_development_sessions=1",
+                "expected_selection_sessions=0",
+                "expected_test_sessions=0",
                 *(f"source_exclusion={date}" for date in exclusions),
                 "early_close=2019-07-03,46800",
                 "development_end=2019-08-06",
@@ -153,6 +157,33 @@ def test_orderbook_column_order_matches_lobster() -> None:
         "bid_price_2",
         "bid_size_2",
     ]
+
+
+def test_analysis_inputs_must_match_the_declared_calendar() -> None:
+    policy = AnalysisPolicy(
+        symbol="TSLA",
+        year=2019,
+        source_availability="fixture",
+        maximum_session_end_gap_seconds=60,
+        expected_delivered_sessions=5,
+        expected_included_sessions=4,
+        expected_development_sessions=1,
+        expected_selection_sessions=2,
+        expected_test_sessions=1,
+        source_exclusions=frozenset({"2019-03-08"}),
+        early_closes_seconds={"2019-07-03": 46_800},
+        development_end="2019-08-06",
+        selection_start="2019-08-07",
+        selection_end="2019-10-17",
+        test_start="2019-10-18",
+    )
+    canonical = ["2019-08-06", "2019-08-07", "2019-10-17", "2019-10-18"]
+
+    assert validate_analysis_universe(canonical, policy) == canonical
+    with pytest.raises(ValueError, match="source exclusions"):
+        validate_analysis_universe([*canonical, "2019-03-08"], policy)
+    with pytest.raises(ValueError, match="session count mismatch"):
+        validate_analysis_universe(canonical[:-1], policy)
 
 
 def test_execution_uses_the_previous_book_row(tmp_path: Path) -> None:

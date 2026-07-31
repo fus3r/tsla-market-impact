@@ -19,10 +19,12 @@ included training dates, and contains 51 dates with no trimming of the response.
 | Volume terms and raw signed count | 0.359 | 106.93 |
 | Volume and count transforms | 0.360 | 106.86 |
 
-The last model cuts MSE by 27.4% relative to signed volume. A bootstrap over
-complete test dates gives an interval of 26.5% to 28.5% for that reduction.
-Both the order-flow variables and the price change are measured inside the same
-window, so this is a conditional impact model rather than a pre-trade forecast.
+Adding raw signed count to the nonlinear volume model cuts MSE by 8.7%. A
+bootstrap over complete test dates gives an interval of 8.0% to 9.5%. The full
+model's total reduction relative to linear signed volume is 27.4%, but most of
+that gap comes from the volume transforms. Both the order-flow variables and
+the price change are measured inside the same window, so this is a conditional
+impact model rather than a pre-trade forecast.
 
 The separate queue-imbalance experiment is forward-looking: the displayed
 level-1 state predicts the direction of the next same-session mid-price change.

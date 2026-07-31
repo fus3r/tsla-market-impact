@@ -82,9 +82,11 @@ The fixed late-year dates form an untrimmed holdout of \TestObservations{}
 windows. Signed-volume OLS reaches \Rtwo{} = \BaselineRtwo{}. Nonlinear volume
 terms raise the score to \VolumeRtwo{}, and raw signed order count raises it to
 \RawCountRtwo{}. Further count transforms change little: the full score is
-\AugmentedRtwo{}. Mean squared error falls by \MseReduction{} relative to the
-linear baseline. Resampling complete test dates gives a 95 percent interval of
-\BootstrapMseLower{} to \BootstrapMseUpper{} for that reduction.
+\AugmentedRtwo{}. Adding raw count to the nonlinear volume model reduces mean
+squared error by \MseReduction{}. Resampling complete test dates gives a 95
+percent interval of \BootstrapMseLower{} to \BootstrapMseUpper{} for that
+incremental reduction. The full model's total reduction relative to linear
+signed volume is \TotalMseReduction{}.
 
 Separately, a C++20 engine audits \ReplayEvents{} included level-2
 message/snapshot pairs without claiming full order priority. It classifies
@@ -132,8 +134,9 @@ already been included?
 Signed volume alone explains \BaselineRtwo{} of the holdout variance. Fixed
 volume transforms explain \VolumeRtwo{}. Adding raw signed count brings the
 score to \RawCountRtwo{}, almost the same as the full specification at
-\AugmentedRtwo{}. Raw signed count provides the gain. Extra transforms and ridge
-regression leave the reported score unchanged.
+\AugmentedRtwo{}. Raw signed count provides the second, incremental gain after
+volume curvature. Extra transforms and ridge regression leave the reported
+score unchanged.
 
 Both regressors and response cover the same event-time window. The date split
 tests whether a conditional mapping estimated earlier in the year transfers to
@@ -165,7 +168,7 @@ The course project followed \citet{bugaenko2019}, which connects order-flow
 imbalance, local liquidity estimates, and supervised impact models. I retain the
 transaction reconstruction and scaling exercise, but rebuild the supervised
 evaluation around untrimmed chronological date splits. The model ablation
-isolates signed count as the useful extension of the volume baseline.
+isolates signed count as the useful extension of a nonlinear volume baseline.
 
 \citet{gould2015} study queue imbalance as a one-tick-ahead price predictor and
 emphasize its dependence on the spread regime. I use the displayed level-1
@@ -406,9 +409,9 @@ the second increase.
 \end{table}
 
 Figure~\ref{fig:calibration} compares fitted and realized means in 20 holdout
-bins. The linear volume model spans too narrow a range for the S-shaped response.
-The count model follows the binned means more closely, although individual
-windows remain noisy.
+bins. The nonlinear volume-only model still leaves a systematic count residual.
+Adding raw signed count follows the binned means more closely, although
+individual windows remain noisy.
 
 \begin{figure}[H]
   \centering
@@ -434,21 +437,23 @@ captured by $\Delta E$.
   \label{fig:countresidual}
 \end{figure}
 
-The augmented model lowers MSE from \BaselineMse{} to \AugmentedMse{} cents
-squared, a relative reduction of \MseReduction{}. The day-clustered 95 percent
-interval is [\BootstrapMseLower{}, \BootstrapMseUpper{}]. The corresponding
-increase in \Rtwo{} is \DeltaRtwo{}, with interval
+Adding raw count lowers MSE from \VolumeMse{} to \RawCountMse{} cents squared, a
+relative reduction of \MseReduction{}. The day-clustered 95 percent interval is
+[\BootstrapMseLower{}, \BootstrapMseUpper{}]. The corresponding increase in
+\Rtwo{} is \DeltaRtwo{}, with interval
 [\BootstrapDeltaLower{}, \BootstrapDeltaUpper{}]. None of the 10,000 bootstrap
 draws gives a non-positive improvement. This interval quantifies sampling
 variation across the 51 late-year dates. It does not cover model-selection or
-cross-year uncertainty.
+cross-year uncertainty. For context, the full count-transform model lowers MSE
+by \TotalMseReduction{} relative to linear signed volume; that is a total
+ablation gap, not the effect of count alone.
 
 \subsection{Time and horizon checks}
 
-The count specification outperforms signed volume in every expanding test
-block in Figure~\ref{fig:walk}. Its \Rtwo{} ranges from about 0.33 to 0.38, while
-the baseline ranges from about 0.10 to 0.14. The gap is present before the final
-December block.
+The raw-count specification outperforms the nonlinear volume model in every
+expanding test block in Figure~\ref{fig:walk}. Its \Rtwo{} ranges from about
+0.34 to 0.38, while the volume-only score ranges from about 0.29 to 0.31. The
+gap is present before the final December block.
 
 \begin{figure}[H]
   \centering
@@ -460,8 +465,8 @@ December block.
 \end{figure}
 
 The same ordering holds from 5 to 100 orders (Figure~\ref{fig:horizons}). At
-$T=5$, \Rtwo{} rises from 0.074 to 0.282. At $T=100$, it rises from 0.269 to
-0.482. Longer windows average more idiosyncratic trade-level noise and contain a
+$T=5$, \Rtwo{} rises from 0.237 to 0.282. At $T=100$, it rises from 0.375 to
+0.483. Longer windows average more idiosyncratic trade-level noise and contain a
 wider count range, so higher scores at larger $T$ should not be read as better
 short-horizon forecasts.
 
@@ -751,9 +756,12 @@ separate.
 \section{Conclusion}
 \vspace{0.2em}
 
-On the included-session late-2019 holdout, adding signed count to the volume model moves
-\Rtwo{} from \BaselineRtwo{} to \AugmentedRtwo{} and reduces MSE by
-\MseReduction{}. Raw count accounts for almost all of that gain. The ordering is
+On the included-session late-2019 holdout, adding raw signed count to the
+nonlinear volume model moves \Rtwo{} from \VolumeRtwo{} to \RawCountRtwo{} and
+reduces MSE by \MseReduction{}, with a date-bootstrap interval of
+[\BootstrapMseLower{}, \BootstrapMseUpper{}]. The full count-transform model's
+\TotalMseReduction{} reduction relative to linear signed volume is a broader
+ablation gap and is not attributed to count alone. The incremental ordering is
 stable across the time and horizon checks reported above.
 
 The finite-depth engine audits \ReplayEvents{} included events without claiming

@@ -15,6 +15,9 @@ struct AnalysisPolicy {
   std::uint64_t maximum_session_end_gap_ns{};
   std::uint64_t expected_delivered_sessions{};
   std::uint64_t expected_included_sessions{};
+  std::uint64_t expected_development_sessions{};
+  std::uint64_t expected_selection_sessions{};
+  std::uint64_t expected_test_sessions{};
   std::set<std::string> source_exclusions;
   std::map<std::string, std::uint64_t> early_closes_ns;
   std::string development_end;

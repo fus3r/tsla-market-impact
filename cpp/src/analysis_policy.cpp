@@ -111,6 +111,12 @@ AnalysisPolicy load_analysis_policy(const std::filesystem::path& path) {
       policy.expected_delivered_sessions = unsigned_integer(value, key);
     } else if (key == "expected_included_sessions") {
       policy.expected_included_sessions = unsigned_integer(value, key);
+    } else if (key == "expected_development_sessions") {
+      policy.expected_development_sessions = unsigned_integer(value, key);
+    } else if (key == "expected_selection_sessions") {
+      policy.expected_selection_sessions = unsigned_integer(value, key);
+    } else if (key == "expected_test_sessions") {
+      policy.expected_test_sessions = unsigned_integer(value, key);
     } else if (key == "development_end") {
       validate_date(value, key);
       policy.development_end = value;
@@ -133,6 +139,9 @@ AnalysisPolicy load_analysis_policy(const std::filesystem::path& path) {
       policy.maximum_session_end_gap_ns == 0 ||
       policy.expected_delivered_sessions == 0 ||
       policy.expected_included_sessions == 0 ||
+      !scalar_keys.contains("expected_development_sessions") ||
+      !scalar_keys.contains("expected_selection_sessions") ||
+      !scalar_keys.contains("expected_test_sessions") ||
       policy.source_exclusions.empty() || policy.early_closes_ns.empty() ||
       policy.development_end.empty() || policy.selection_start.empty() ||
       policy.selection_end.empty() || policy.test_start.empty()) {
@@ -144,6 +153,13 @@ AnalysisPolicy load_analysis_policy(const std::filesystem::path& path) {
               policy.expected_included_sessions !=
           policy.source_exclusions.size()) {
     throw std::runtime_error("analysis policy session counts are inconsistent");
+  }
+  if (policy.expected_development_sessions +
+          policy.expected_selection_sessions +
+          policy.expected_test_sessions !=
+      policy.expected_included_sessions) {
+    throw std::runtime_error(
+        "analysis policy evaluation counts are inconsistent");
   }
   if (!(policy.development_end < policy.selection_start &&
         policy.selection_start <= policy.selection_end &&

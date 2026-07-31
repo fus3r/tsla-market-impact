@@ -28,6 +28,27 @@ string(
   POLICY_FIXTURE
   "${POLICY_FIXTURE}"
 )
+string(
+  REGEX REPLACE
+  "expected_development_sessions=[0-9]+"
+  "expected_development_sessions=1"
+  POLICY_FIXTURE
+  "${POLICY_FIXTURE}"
+)
+string(
+  REGEX REPLACE
+  "expected_selection_sessions=[0-9]+"
+  "expected_selection_sessions=0"
+  POLICY_FIXTURE
+  "${POLICY_FIXTURE}"
+)
+string(
+  REGEX REPLACE
+  "expected_test_sessions=[0-9]+"
+  "expected_test_sessions=0"
+  POLICY_FIXTURE
+  "${POLICY_FIXTURE}"
+)
 set(POLICY_FIXTURE_PATH "${OUTPUT_DIR}/analysis-policy.conf")
 file(WRITE "${POLICY_FIXTURE_PATH}" "${POLICY_FIXTURE}")
 foreach(DATE IN ITEMS 2019-07-03 2019-01-09 2019-03-08 2019-09-18)

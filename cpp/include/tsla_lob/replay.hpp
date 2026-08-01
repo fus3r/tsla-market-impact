@@ -56,6 +56,17 @@ struct TimingSummary {
 
 [[nodiscard]] bool valid_snapshot(const BookSnapshot& snapshot) noexcept;
 
+[[nodiscard]] std::int64_t top_of_book_ofi(
+    const BookSnapshot& previous,
+    const BookSnapshot& current);
+
+[[nodiscard]] double level_one_queue_imbalance(
+    const BookSnapshot& snapshot);
+
+[[nodiscard]] double bounded_order_flow_pressure(
+    std::int64_t cumulative_ofi,
+    const BookSnapshot& snapshot);
+
 [[nodiscard]] TimingSummary summarize_timings(
     const std::vector<double>& seconds,
     std::uint64_t events);
@@ -64,6 +75,11 @@ void write_queue_imbalance_bins(
     const Dataset& dataset,
     const std::filesystem::path& output,
     std::size_t bins = 101);
+
+void write_order_flow_signal_bins(
+    const Dataset& dataset,
+    const std::filesystem::path& output,
+    std::size_t bins = 31);
 
 [[nodiscard]] std::string replay_audit_json(
     const Dataset& dataset,

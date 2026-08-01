@@ -68,7 +68,8 @@ endforeach()
 
 set(BENCHMARK_JSON "${OUTPUT_DIR}/benchmark.json")
 set(QUEUE_BINS "${OUTPUT_DIR}/queue-bins.csv")
-file(REMOVE "${BENCHMARK_JSON}" "${QUEUE_BINS}")
+set(ORDER_FLOW_BINS "${OUTPUT_DIR}/order-flow-bins.csv")
+file(REMOVE "${BENCHMARK_JSON}" "${QUEUE_BINS}" "${ORDER_FLOW_BINS}")
 execute_process(
   COMMAND
     "${LOBSTER_REPLAY}"
@@ -80,6 +81,8 @@ execute_process(
     --json "${BENCHMARK_JSON}"
     --queue-bins "${QUEUE_BINS}"
     --imbalance-bins 11
+    --order-flow-bins "${ORDER_FLOW_BINS}"
+    --order-flow-grid 11
     --machine "synthetic CTest fixture"
   RESULT_VARIABLE REPLAY_STATUS
   OUTPUT_VARIABLE REPLAY_STDOUT
@@ -115,6 +118,45 @@ if(
     FATAL_ERROR
     "unexpected synthetic dataset size: ${EVENTS} events, ${SESSIONS} sessions, "
     "${DELIVERED} delivered, ${EXCLUSIONS} exclusions"
+  )
+endif()
+
+file(READ "${ORDER_FLOW_BINS}" ORDER_FLOW_OUTPUT)
+string(
+  FIND
+  "${ORDER_FLOW_OUTPUT}"
+  "date,sample,spread_bucket,queue_bin,ofi_bin,queue_center,ofi_center,observations,up_moves,down_moves"
+  ORDER_FLOW_HEADER_POSITION
+)
+string(
+  REGEX
+  MATCHALL
+  "2019-07-03,best_quote_updates,all_spreads"
+  ORDER_FLOW_ALL_SPREAD_ROWS
+  "${ORDER_FLOW_OUTPUT}"
+)
+list(LENGTH ORDER_FLOW_ALL_SPREAD_ROWS ORDER_FLOW_ALL_SPREAD_COUNT)
+string(
+  FIND
+  "${ORDER_FLOW_OUTPUT}"
+  "2019-07-03,best_quote_updates,all_spreads,6,5,0.1818181818,0,2,1,1"
+  RESET_CELL_POSITION
+)
+string(
+  FIND
+  "${ORDER_FLOW_OUTPUT}"
+  "2019-07-03,best_quote_updates,all_spreads,7,6,0.3636363636,0.1818181818,1,1,0"
+  POSITIVE_OFI_POSITION
+)
+if(
+  NOT ORDER_FLOW_HEADER_POSITION EQUAL 0
+  OR NOT ORDER_FLOW_ALL_SPREAD_COUNT EQUAL 5
+  OR RESET_CELL_POSITION EQUAL -1
+  OR POSITIVE_OFI_POSITION EQUAL -1
+)
+  message(
+    FATAL_ERROR
+    "order-flow output does not match the synthetic reset path"
   )
 endif()
 if(NOT SEEDED EQUAL 1 OR NOT EXACT EQUAL 4 OR NOT CENSORED EQUAL 2)

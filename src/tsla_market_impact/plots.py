@@ -415,6 +415,67 @@ def plot_queue_imbalance_forecast(
     return output
 
 
+def plot_order_flow_signal_ablation(
+    comparisons: pd.DataFrame,
+    path: Path | str,
+) -> Path:
+    """Plot late-date Brier reductions for linear order-flow signals."""
+
+    palette = _style()
+    panels = [
+        ("all_spreads", "All spreads"),
+        ("one_tick", "One-tick spread"),
+    ]
+    models = [
+        ("queue", "Queue imbalance"),
+        ("ofi", "Cumulative OFI"),
+        ("queue_and_ofi", "Queue + OFI"),
+    ]
+    figure, axes = plt.subplots(1, 2, figsize=(7.15, 3.25), layout="constrained")
+    for panel, (axis, (bucket, title)) in enumerate(
+        zip(axes, panels, strict=True)
+    ):
+        part = comparisons.loc[
+            comparisons["sample"].eq("best_quote_updates")
+            & comparisons["spread_bucket"].eq(bucket)
+            & comparisons["reference"].eq("intercept")
+        ].set_index("challenger")
+        y_positions = np.arange(len(models))[::-1]
+        for y_position, (model, label) in zip(
+            y_positions,
+            models,
+            strict=True,
+        ):
+            row = part.loc[model]
+            point = 100 * row["relative_brier_reduction"]
+            lower = 100 * row["relative_brier_reduction_lower_95"]
+            upper = 100 * row["relative_brier_reduction_upper_95"]
+            axis.errorbar(
+                point,
+                y_position,
+                xerr=np.array([[point - lower], [upper - point]]),
+                fmt="o",
+                color=(
+                    palette["blue"]
+                    if model != "queue_and_ofi"
+                    else palette["orange"]
+                ),
+                capsize=2.5,
+                markersize=4.5,
+                linewidth=1.0,
+                label=label,
+            )
+        axis.axvline(0, color=palette["line"], linewidth=0.9)
+        axis.set_yticks(y_positions, [label for _, label in models])
+        axis.set_title(f"({chr(97 + panel)})  {title}", loc="left")
+        axis.set_xlabel("Brier reduction vs train-frequency baseline (%)")
+        _clean_axis(axis)
+    output = _prepare_path(path)
+    figure.savefig(output, bbox_inches="tight", metadata={"CreationDate": None})
+    plt.close(figure)
+    return output
+
+
 def plot_scaling_collapse(
     collapsed: pd.DataFrame,
     shape: dict[str, float],

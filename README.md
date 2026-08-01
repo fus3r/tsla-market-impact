@@ -5,9 +5,10 @@ orders with a C++20 level-2 replay and audit engine. The source delivery contain
 252 NASDAQ sessions in 2019; the shared source policy retains 249 and declares
 the three unavailable truncated pairs.
 
-The impact question is simple: after observing signed share volume over a short
-window, does the number of buyer- and seller-initiated orders add information
-about the mid-price change?
+The first question asks whether signed order count adds information about a
+same-window mid-price change after signed share volume is known. A separate
+forward experiment asks whether current queue imbalance and causal top-of-book
+order flow predict the direction of the next mid-price change.
 
 It does in this sample. The fixed test period begins on 18 October, after 198
 included training dates, and contains 51 dates with no trimming of the response.
@@ -26,20 +27,29 @@ that gap comes from the volume transforms. Both the order-flow variables and
 the price change are measured inside the same window, so this is a conditional
 impact model rather than a pre-trade forecast.
 
-The separate queue-imbalance experiment is forward-looking: the displayed
-level-1 state predicts the direction of the next same-session mid-price change.
-The same fixed calendar boundary leaves 198 included training dates and 51 test
-dates.
+The next-move experiment is forward-looking. Queue imbalance uses the current
+displayed sizes. OFI accumulates top-of-book changes only since the current
+mid-price was established, then divides by current displayed depth and applies
+the fixed transform `2 * atan(x) / pi`. Four logistic specifications are fit on
+the first 198 included dates and scored on the final 51 without refitting.
 
-| Best-quote state sample | Test observations | ROC-AUC | Brier reduction |
-|---|---:|---:|---:|
-| All spreads | 5,489,604 | 0.538 | 0.12% |
-| One-tick spread | 61,829 | 0.626 | 4.69% |
+| Spread | Signal | Test observations | ROC-AUC | Relative Brier reduction |
+|---|---|---:|---:|---:|
+| All | Queue | 5,489,604 | 0.538 | 0.12% |
+| All | OFI | 5,489,604 | 0.616 | 5.61% |
+| All | Queue + OFI | 5,489,604 | 0.627 | 5.61% |
+| One tick | Queue | 61,829 | 0.627 | 4.70% |
+| One tick | OFI | 61,829 | 0.694 | 12.06% |
+| One tick | Queue + OFI | 61,829 | 0.752 | 18.24% |
 
-The all-spread interval is -0.03% to 0.29%, so the pooled signal is weak. The
-one-tick interval is 2.32% to 7.00% under 10,000 resamples of complete test
-dates. That spread-conditioned result is exploratory, and a direction score
-before fees, latency, and queue position is not a trading strategy.
+The combined-model interval is 5.36% to 5.84% for all spreads and 16.33% to
+19.97% for one-tick states under 10,000 resamples of complete test dates. Queue
+imbalance adds no detectable improvement over OFI in the pooled sample. In the
+exploratory one-tick subset, the combined model improves on OFI by 7.02%, with
+an interval of 5.22% to 8.79%. The pooled and one-tick conclusions are unchanged
+with 21, 31, and 41 bins per feature axis. Several states share one next-move
+label, OFI depends on the waiting horizon, and a direction score before fees,
+latency, and queue position is not a trading strategy.
 
 The scaling analysis is separate. It applies the curve-collapse construction of
 Patzelt and Bouchaud to this included TSLA 2019 sample. The reported values
@@ -112,13 +122,13 @@ wire-to-wire trading latency.
 
 - `analysis-policy.conf` is the shared Python/C++ source and calendar policy.
 - `cpp/` contains the fixed-width decoder, annual source-integrity gate, replay
-  benchmark, daily queue-bin exporter, and the
+  benchmark, daily queue and joint queue/OFI exporters, and the
   [finite-depth transition contract](cpp/README.md).
 - `src/tsla_market_impact/` contains the LOBSTER reconstruction, impact study,
-  and chronological next-move evaluation.
+  and chronological queue/OFI ablation.
 - `results/` contains aggregate tables, including the 252-row coverage audit
-  and annual level-2 replay, benchmark, and queue-model results. Licensed rows
-  are not included.
+  and annual level-2 replay, benchmark, queue-model, and order-flow results.
+  Licensed rows are not included.
 - `report/` contains the LaTeX source, figures, references, and compiled PDF.
 - `tests/` checks source integrity, data alignment, event-time windows,
   chronological splits, complete-date bootstrap, queue evaluation, and scaling
@@ -208,7 +218,9 @@ Regenerate the annual C++ benchmark after the tests pass:
   --replay-runs 11 \
   --machine 'MacBook Pro Mac16,8; Apple M4 Pro; 48 GB; macOS 15.7.7' \
   --json results/lobster_replay_benchmark.json \
-  --queue-bins data/processed/queue-imbalance-bins.csv
+  --queue-bins data/processed/queue-imbalance-bins.csv \
+  --order-flow-bins data/processed/order-flow-bins-31.csv \
+  --order-flow-grid 31
 ```
 
 The command audits every delivered pair, refuses any undeclared coverage
@@ -227,6 +239,25 @@ tsla-impact analyze-queue \
 The daily intermediate contains only aggregate counts but remains local. The
 committed JSON, metrics, calibration table, and vector figure are compact
 outputs of that fixed protocol.
+
+Fit the queue, OFI, and combined models on the same fixed split:
+
+```bash
+tsla-impact analyze-order-flow \
+  --bins data/processed/order-flow-bins-31.csv
+```
+
+The grid-resolution check consumes independently exported aggregate grids:
+
+```bash
+tsla-impact analyze-order-flow-grid \
+  --bins 21=data/processed/order-flow-bins-21.csv \
+  --bins 31=data/processed/order-flow-bins-31.csv \
+  --bins 41=data/processed/order-flow-bins-41.csv
+```
+
+The joint grid remains local. The committed model, comparison, calibration,
+robustness, and vector-figure artifacts contain aggregate evidence only.
 
 ## Origin and credit
 

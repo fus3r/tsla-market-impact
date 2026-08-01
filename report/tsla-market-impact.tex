@@ -16,10 +16,10 @@
 \usepackage[hidelinks]{hyperref}
 
 \hypersetup{
-  pdftitle={Signed order count and queue imbalance: TSLA, 2019},
+  pdftitle={Signed order count, queue imbalance, OFI, and depth-aware replay: TSLA, 2019},
   pdfauthor={Riad Darwish},
   pdfsubject={Conditional impact, next-price prediction, and finite-depth replay},
-  pdfkeywords={market impact, queue imbalance, market microstructure, LOBSTER, C++, TSLA}
+  pdfkeywords={market impact, queue imbalance, order flow imbalance, market microstructure, LOBSTER, C++, TSLA}
 }
 
 \input{results.tex}
@@ -45,7 +45,7 @@
 
 \thispagestyle{plain}
 \begin{center}
-  {\LARGE\bfseries Signed order count and queue imbalance\par}
+  {\LARGE\bfseries Signed order count and order-book imbalance\par}
   \vspace{1.5mm}
   {\Large TSLA, 2019\par}
   \vspace{4mm}
@@ -53,7 +53,7 @@
   \vspace{6mm}
   {\large Riad Darwish\par}
   {\normalsize CentraleSup\'elec\par}
-  {\normalsize 29 July 2026\par}
+  {\normalsize 1 August 2026\par}
 \end{center}
 
 \vspace{3mm}
@@ -92,11 +92,12 @@ Separately, a C++20 engine audits \ReplayEvents{} included level-2
 message/snapshot pairs without claiming full order priority. It classifies
 \ReplayExact{} transitions as exact and \ReplayCensored{} as depth-censored,
 with no observable mismatch, unsupported event, or invalid snapshot. A
-forward-looking queue experiment then predicts the direction of the next
-same-session mid-price change. The pooled signal is weak; in the exploratory
-one-tick subset, ROC-AUC is \QueueOneTickAuc{} and Brier score improves by
-\QueueOneTickBrierReduction{} with a complete-date interval of
-\QueueOneTickLower{} to \QueueOneTickUpper{}.
+forward-looking experiment then predicts the direction of the next same-session
+mid-price change from current queue imbalance and causal top-of-book OFI. The
+combined model reaches ROC-AUC \CombinedAllAuc{} and reduces Brier score by
+\CombinedAllBrierReduction{} across all spreads. In the exploratory one-tick
+subset, the corresponding values are \CombinedOneTickAuc{} and
+\CombinedOneTickBrierReduction{}.
 
 I also apply the finite-size scaling construction of \citet{patzelt2018} to the
 same stock-year. The width and height scale regressions have in-sample \Rtwo{}
@@ -119,17 +120,20 @@ the study does not claim complete 2019 coverage or external replication.
 \end{center}
 
 \vspace{0.5em}
-\textbf{Keywords:} market impact, queue imbalance, market microstructure,
-chronological validation, order-book replay, finite-size scaling
+\textbf{Keywords:} market impact, queue imbalance, order-flow imbalance,
+market microstructure, chronological validation, order-book replay,
+finite-size scaling
 
 \section{Question}
 
 In the local benchmark of \citet{kyle1985}, signed order flow and price change
 are connected by a linear slope. Empirical impact curves bend, change scale with
 the aggregation horizon, and reflect persistent trade signs
-\citep{bouchaud2018,patzelt2018}. I focus on one question: for TSLA in 2019, does
-signed order count explain price impact on later dates after signed volume has
-already been included?
+\citep{bouchaud2018,patzelt2018}. I ask two distinct questions for TSLA in 2019.
+First, does signed order count explain conditional price impact on later dates
+after signed volume has already been included? Second, do the current queues
+and order-flow changes observed since the last price move forecast the
+direction of the next move?
 
 Signed volume alone explains \BaselineRtwo{} of the holdout variance. Fixed
 volume transforms explain \VolumeRtwo{}. Adding raw signed count brings the
@@ -545,8 +549,8 @@ validate an unobserved queue, or establish execution priority.
 
 The benchmark separates complete CSV decoding from replay over the resident
 64-byte event records. The measured replay audits transitions, checks snapshot
-invariants, and maintains a checksum. The queue export below runs separately
-after those measured passes.
+invariants, and maintains a checksum. The aggregate signal exports below run
+separately after those measured passes.
 
 \begin{table}[H]
   \centering
@@ -570,46 +574,87 @@ ns/event. Each timing divides a complete pass by \ReplayEvents{}. These are
 throughput measurements, not individual-event tail latency or wire-to-wire
 trading latency.
 
-\subsection{A forward queue-imbalance target}
+\subsection{Causal queue and order-flow signals}
 
 For the displayed best queues $q_t^b$ and $q_t^a$, define
 \begin{equation}
   I_t = \frac{q_t^b-q_t^a}{q_t^b+q_t^a}.
 \end{equation}
-The label is one when the next same-session mid-price change is upward and zero
-when it is downward. I retain the first displayed state in each session and
-later states after an event changes a best price or size. C++ aggregates them
-into 101 fixed imbalance bins by date and spread regime; no row-level state
-enters the statistical package.
+I also calculate the top-of-book OFI increment of \citet{cont2014},
+\begin{align}
+e_t={}&
+  \mathbf{1}_{\{P_t^b\geq P_{t-1}^b\}}q_t^b
+  -\mathbf{1}_{\{P_t^b\leq P_{t-1}^b\}}q_{t-1}^b \notag\\
+&-\mathbf{1}_{\{P_t^a\leq P_{t-1}^a\}}q_t^a
+  +\mathbf{1}_{\{P_t^a\geq P_{t-1}^a\}}q_{t-1}^a .
+\end{align}
+Let $\tau(t)$ be the state at which the current mid-price was established.
+Only already observed increments enter
+\begin{equation}
+  E_t=\sum_{u=\tau(t)+1}^{t}e_u,\qquad
+  Z_t=\frac{2}{\pi}\arctan\left(\frac{E_t}{q_t^b+q_t^a}\right).
+\end{equation}
+Thus $E_t$ resets after each mid-price change, while $Z_t$ is a bounded,
+depth-normalized summary of submissions, cancellations, and executions since
+that change. It is not a reconstructed queue or an estimate of order priority.
 
-The first 198 included dates through 17 October fit a one-feature logistic
-model. All 51 dates from 18 October onward are scored without refitting. The
-intercept-only benchmark uses the training up-move frequency. Brier
-improvements and intervals compare the two models while resampling complete
-test dates.
+The label is one when the next same-session mid-price change is upward and zero
+when it is downward. I retain states after an event changes a best price or
+size. C++ aggregates $(I_t,Z_t)$ onto a fixed $31\times31$ grid by date and
+spread regime; no row-level state enters the statistical package.
+
+The first 198 included dates through 17 October fit four logistic
+specifications: intercept, $I_t$, $Z_t$, and $(I_t,Z_t)$. All 51 dates from 18
+October onward are scored without refitting. The intercept-only benchmark uses
+the training up-move frequency. Brier improvements and intervals resample
+complete test dates.
 
 \begin{table}[H]
   \centering
-  \caption{Direction of the next mid-price change on the fixed late-2019 test
-  dates. Brier reduction is relative to the training-frequency benchmark.}
+  \caption{Linear next-move signal ablation on the fixed late-2019 test dates.
+  Brier reduction is relative to the training-frequency benchmark.}
   \label{tab:queueforecast}
-  \begin{tabular}{lrrr}
+  \small
+  \begin{tabular}{llrrr}
     \toprule
-    Best-quote state sample & Observations & ROC-AUC & Brier reduction \\
+    Spread & Signal & Observations & ROC-AUC & Brier reduction \\
     \midrule
-    All spreads & \QueueAllObservations{} & \QueueAllAuc{} & \QueueAllBrierReduction{} \\
-    One-tick spread & \QueueOneTickObservations{} & \QueueOneTickAuc{} & \QueueOneTickBrierReduction{} \\
+    All & Queue & \QueueAllObservations{} & \QueueAllAuc{} & \QueueAllBrierReduction{} \\
+    All & OFI & \QueueAllObservations{} & \OfiAllAuc{} & \OfiAllBrierReduction{} \\
+    All & Queue + OFI & \QueueAllObservations{} & \CombinedAllAuc{} & \CombinedAllBrierReduction{} \\
+    One tick & Queue & \QueueOneTickObservations{} & \JointQueueOneTickAuc{} & \JointQueueOneTickBrierReduction{} \\
+    One tick & OFI & \QueueOneTickObservations{} & \OfiOneTickAuc{} & \OfiOneTickBrierReduction{} \\
+    One tick & Queue + OFI & \QueueOneTickObservations{} & \CombinedOneTickAuc{} & \CombinedOneTickBrierReduction{} \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-The pooled interval runs from \QueueAllLower{} to \QueueAllUpper{}, so its
-signal is weak. The one-tick interval runs from \QueueOneTickLower{} to
-\QueueOneTickUpper{}, and the monotone holdout curve follows the earlier-date
-logistic fit. Because the spread
-stratification is exploratory, this stronger subset requires confirmation on
-another asset or year. A direction score before fees, latency, and queue
-position is not a trading strategy.
+Across all spreads, OFI raises ROC-AUC from \QueueAllAuc{} to \OfiAllAuc{} and
+reduces Brier score by \OfiAllBrierReduction{}. The combined interval is
+$[\CombinedAllLower{},\,\CombinedAllUpper{}]$. Queue adds no detectable pooled
+gain over OFI: the point improvement is 0.004 percent and its complete-date
+interval is $[-0.09\%,\,0.10\%]$. In the exploratory one-tick subset, the
+combined model reaches \CombinedOneTickAuc{} and a
+\CombinedOneTickBrierReduction{} reduction
+$[\CombinedOneTickLower{},\,\CombinedOneTickUpper{}]$. Relative to OFI alone,
+the reduction is \CombinedVsOfiOneTick{}
+$[\CombinedVsOfiOneTickLower{},\,\CombinedVsOfiOneTickUpper{}]$.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/order-flow-ablation.pdf}
+  \caption{Relative Brier reduction against the training-frequency benchmark.
+  Bars are 95 percent intervals from 10,000 resamples of the 51 complete test
+  dates.}
+  \label{fig:orderflow}
+\end{figure}
+
+Repeating the complete ablation on fixed grids with 21, 31, and 41 bins per
+axis leaves the pooled combined ROC-AUC between 0.626 and 0.627 and its Brier
+reduction between 5.57 and 5.63 percent. The one-tick values remain
+0.751--0.752 and 18.10--18.24 percent. The queue-only calibration below remains
+useful as a univariate diagnostic. A direction score before fees, latency, and
+queue position is not a trading strategy.
 
 \begin{figure}[H]
   \centering
@@ -714,11 +759,15 @@ this included TSLA sample in-sample; the cross-asset claim in
   \item Timestamp and side grouping cannot recover investor identity or
   institutional metaorders. The book covers NASDAQ rather than consolidated US
   liquidity, and hidden-execution signs are uncertain around the midpoint.
-  \item Several queue states can share the same eventual mid-price-change
-  label. The score does not represent independent event trials; uncertainty is
-  resampled at the trading-date level.
+  \item Several order-book states can share the same eventual mid-price-change
+  label. The scores do not represent independent event trials; uncertainty is
+  resampled at the trading-date level. OFI also depends on the waiting horizon
+  to that next move, so another horizon defines a different feature.
   \item The one-tick spread stratification is exploratory. Its stronger result
   is not evidence of generalization beyond this stock-year.
+  \item The joint logistic models use fixed binned features rather than raw
+  event states. The 21/31/41-grid check limits this discretization concern but
+  does not replace validation on an untouched stock-year.
   \item The feature family grew out of the course analysis. Although dates are
   held out chronologically, there is no second untouched year after the feature
   comparison. The bootstrap does not account for that research process.
@@ -730,8 +779,8 @@ this included TSLA sample in-sample; the cross-asset claim in
   \item The scaling standard errors treat first-stage $Q_N$ and $R_N$ estimates
   as data. They do not propagate all curve-fitting uncertainty, and overlapping
   information across horizons remains.
-  \item TSLA in 2019 is one liquidity regime. Neither the count result nor the
-  fitted exponents can be assumed to hold for another asset or year.
+  \item TSLA in 2019 is one liquidity regime. The count, OFI, and fitted-scaling
+  results cannot be assumed to hold for another asset or year.
 \end{itemize}
 
 \section{Reproducibility and provenance}
@@ -741,12 +790,12 @@ an aggregate scheduled-close audit. It then reconstructs the two transaction
 tables from the included sessions, builds event-time windows, fits the models,
 and writes the remaining aggregate files under \texttt{results/}. The C++20
 library loads the same policy, rejects undeclared incomplete sessions, audits
-finite-depth transitions, and exports daily queue bins. The figures are vector
-PDFs. Synthetic tests cover file pairing, source coverage, half-day filtering,
-book alignment, day boundaries, fixed chronological splits, complete-date
-resampling, queue evaluation, and the scaling regressions. Reproducing the
-annual transaction tables, replay, and queue bins requires licensed LOBSTER
-files, which are not tracked.
+finite-depth transitions, and exports daily queue and joint queue/OFI bins. The
+figures are vector PDFs. Synthetic tests cover file pairing, source coverage,
+half-day filtering, book alignment, day boundaries, fixed chronological
+splits, complete-date resampling, queue/OFI ablation, grid robustness, and the
+scaling regressions. Reproducing the annual transaction tables, replay, and
+aggregate grids requires licensed LOBSTER files, which are not tracked.
 
 The course presentation lists L. Cohen, R. Darwish, A. Pariente, H. Rohrbach,
 and R. Sithisak. Anastasia Bugaenko supervised the work. I wrote this standalone
@@ -766,9 +815,12 @@ stable across the time and horizon checks reported above.
 
 The finite-depth engine audits \ReplayEvents{} included events without claiming
 unobservable FIFO state and replays the resident sample at
-\ReplayThroughput{} million events/s on the stated machine. Queue imbalance is
-only weakly predictive with spreads pooled, but reaches ROC-AUC
-\QueueOneTickAuc{} in the exploratory one-tick subset on later dates.
+\ReplayThroughput{} million events/s on the stated machine. Causal OFI is more
+informative than the static queue state across all spreads: the combined model
+reaches ROC-AUC \CombinedAllAuc{} and reduces Brier score by
+\CombinedAllBrierReduction{} on later dates. Queue and OFI complement each
+other in the exploratory one-tick subset, where the combined ROC-AUC is
+\CombinedOneTickAuc{}.
 
 The included TSLA sessions also fit the scaling form proposed by
 \citet{patzelt2018}. This is a within-sample application to one stock-year, not

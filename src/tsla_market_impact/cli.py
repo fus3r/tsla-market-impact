@@ -11,6 +11,7 @@ from .data import (
     prepare_visible_market_orders,
     run_session_coverage_audit,
 )
+from .orderflow import run_order_flow_analysis, run_order_flow_grid_robustness
 from .pipeline import run_analysis
 from .policy import DEFAULT_ANALYSIS_POLICY, load_analysis_policy
 from .queue import run_queue_analysis
@@ -47,6 +48,21 @@ def _parser() -> argparse.ArgumentParser:
     queue.add_argument("--results", type=Path, default=Path("results"))
     queue.add_argument("--figures", type=Path, default=Path("report/figures"))
 
+    order_flow = subparsers.add_parser("analyze-order-flow")
+    order_flow.add_argument("--bins", type=Path, required=True)
+    order_flow.add_argument("--results", type=Path, default=Path("results"))
+    order_flow.add_argument("--figures", type=Path, default=Path("report/figures"))
+
+    order_flow_grid = subparsers.add_parser("analyze-order-flow-grid")
+    order_flow_grid.add_argument(
+        "--bins",
+        action="append",
+        required=True,
+        metavar="N=PATH",
+        help="Joint signal grid, repeated for at least two resolutions.",
+    )
+    order_flow_grid.add_argument("--results", type=Path, default=Path("results"))
+
     for command in subparsers.choices.values():
         command.add_argument(
             "--analysis-policy",
@@ -54,6 +70,16 @@ def _parser() -> argparse.ArgumentParser:
             default=DEFAULT_ANALYSIS_POLICY,
         )
     return parser
+
+
+def _grid_bin_specs(values: list[str]) -> list[tuple[int, Path]]:
+    specs = []
+    for value in values:
+        size_text, separator, path_text = value.partition("=")
+        if not separator or not size_text.isdigit() or not path_text:
+            raise ValueError(f"invalid grid specification: {value!r}; expected N=PATH")
+        specs.append((int(size_text), Path(path_text)))
+    return specs
 
 
 def main() -> None:
@@ -96,6 +122,19 @@ def main() -> None:
             args.bins,
             args.results,
             args.figures,
+            analysis_policy=policy,
+        )
+    elif args.command == "analyze-order-flow":
+        result = run_order_flow_analysis(
+            args.bins,
+            args.results,
+            args.figures,
+            analysis_policy=policy,
+        )
+    elif args.command == "analyze-order-flow-grid":
+        result = run_order_flow_grid_robustness(
+            _grid_bin_specs(args.bins),
+            args.results,
             analysis_policy=policy,
         )
     print(json.dumps(result, indent=2))

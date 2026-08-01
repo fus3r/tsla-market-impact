@@ -1,4 +1,5 @@
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
@@ -321,6 +322,37 @@ void test_level_two_transition_contract() {
   }
 }
 
+void test_order_flow_pressure_is_causal_and_bounded() {
+  const auto previous =
+      book(101, 20, 99, 30, 102, 40, 98, 50);
+  const auto current =
+      book(101, 15, 99, 40, 102, 40, 98, 50);
+
+  CHECK(tsla_lob::top_of_book_ofi(previous, current) == 15);
+  CHECK(
+      std::abs(
+          tsla_lob::level_one_queue_imbalance(previous) - 0.2) <
+      1e-12);
+  CHECK(
+      std::abs(
+          tsla_lob::bounded_order_flow_pressure(50, previous) -
+          0.5) <
+      1e-12);
+  CHECK(
+      std::abs(
+          tsla_lob::bounded_order_flow_pressure(-50, previous) +
+          0.5) <
+      1e-12);
+  CHECK(
+      tsla_lob::bounded_order_flow_pressure(
+          5'000'000,
+          previous) < 1.0);
+  CHECK(
+      tsla_lob::bounded_order_flow_pressure(
+          -5'000'000,
+          previous) > -1.0);
+}
+
 void test_snapshot_invariants() {
   CHECK(tsla_lob::valid_snapshot(
       book(101, 20, 99, 30, 102, 40, 98, 50)));
@@ -480,6 +512,7 @@ int main(int argc, char* argv[]) {
     test_rejected_inputs();
     test_analysis_policy(argv[2]);
     test_level_two_transition_contract();
+    test_order_flow_pressure_is_causal_and_bounded();
     test_snapshot_invariants();
     test_replay_aggregation();
     std::cout

@@ -45,6 +45,29 @@ dates rather than treating the states as independent trials.
 Only the daily aggregate counts enter Python. Licensed message rows, order
 identifiers, prices, and row-level book states remain local.
 
+## Joint queue and order-flow aggregates
+
+The second exporter compares queue imbalance with a causal top-of-book OFI
+feature. Within each constant-mid-price run, it resets cumulative OFI to zero
+and then adds the standard best-quote OFI increment after every observed
+transition. At state \(t\), it reports the bounded pressure
+
+```text
+Z_t = 2 / pi * atan(cumulative_OFI_t /
+                    (best_bid_size_t + best_ask_size_t)).
+```
+
+Both `Z_t` and queue imbalance lie in `[-1, 1]`. The exporter writes daily
+counts on a fixed joint grid for states after best price or size updates,
+separately by spread regime and next-mid-price direction. The default is 31
+bins per axis. The fixed transform and grid use no late-year outcome or fitted
+threshold, and only aggregate counts enter Python.
+
+The last constant-price run in a session has no next-move label and is
+excluded. Multiple states can share the same eventual direction, so the
+statistical analysis resamples complete trading dates rather than treating
+states as independent trials.
+
 ## Annual replay and benchmark
 
 The replay command discovers the level-2 pairs named by the shared
@@ -65,7 +88,9 @@ cmake --build build
   --replay-runs 11 \
   --machine 'MacBook Pro Mac16,8; Apple M4 Pro; 48 GB; macOS 15.7.7' \
   --json results/lobster_replay_benchmark.json \
-  --queue-bins data/processed/queue-imbalance-bins.csv
+  --queue-bins data/processed/queue-imbalance-bins.csv \
+  --order-flow-bins data/processed/order-flow-bins-31.csv \
+  --order-flow-grid 31
 ```
 
 The committed aggregate covers 38,516,432 events. Excluding the 249 session
@@ -80,8 +105,8 @@ The benchmark reports two distinct costs:
 - `in_memory_replay` scans the included resident records, audits transitions,
   validates snapshots, and maintains a checksum.
 
-The queue export is a separate pass after the measured replay and is not
-included in either timing.
+The queue and order-flow exports are separate passes after the measured replay
+and are not included in either timing.
 
 The committed Release benchmark used one thread on an Apple M4 Pro. Its
 38,516,432 included events occupy 2,465,051,648 bytes as resident event

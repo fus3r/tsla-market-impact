@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <limits>
 #include <map>
+#include <numbers>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -156,14 +157,27 @@ std::size_t spread_bucket(const BookSnapshot& snapshot) {
 std::size_t imbalance_bin(
     const BookSnapshot& snapshot,
     std::size_t bins) {
-  const double bid = static_cast<double>(snapshot.bids[0].size);
-  const double ask = static_cast<double>(snapshot.asks[0].size);
-  const double imbalance = (bid - ask) / (bid + ask);
   const double scaled =
-      (std::clamp(imbalance, -1.0, 1.0) + 1.0) * 0.5;
+      (std::clamp(level_one_queue_imbalance(snapshot), -1.0, 1.0) +
+       1.0) *
+      0.5;
   return std::min(
       bins - 1,
       static_cast<std::size_t>(scaled * static_cast<double>(bins)));
+}
+
+std::size_t signal_bin(double value, std::size_t bins) {
+  const double scaled =
+      (std::clamp(value, -1.0, 1.0) + 1.0) * 0.5;
+  return std::min(
+      bins - 1,
+      static_cast<std::size_t>(scaled * static_cast<double>(bins)));
+}
+
+double bin_center(std::size_t bin, std::size_t bins) {
+  return -1.0 +
+         2.0 * (static_cast<double>(bin) + 0.5) /
+             static_cast<double>(bins);
 }
 
 void accumulate_bin(BinCount& count, int direction) {
@@ -450,6 +464,52 @@ bool valid_snapshot(const BookSnapshot& snapshot) noexcept {
   return true;
 }
 
+std::int64_t top_of_book_ofi(
+    const BookSnapshot& previous,
+    const BookSnapshot& current) {
+  const std::int64_t bid_add =
+      current.bids[0].price >= previous.bids[0].price
+          ? current.bids[0].size
+          : 0;
+  const std::int64_t bid_remove =
+      current.bids[0].price <= previous.bids[0].price
+          ? previous.bids[0].size
+          : 0;
+  const std::int64_t ask_add =
+      current.asks[0].price <= previous.asks[0].price
+          ? current.asks[0].size
+          : 0;
+  const std::int64_t ask_remove =
+      current.asks[0].price >= previous.asks[0].price
+          ? previous.asks[0].size
+          : 0;
+  return bid_add - bid_remove - ask_add + ask_remove;
+}
+
+double level_one_queue_imbalance(const BookSnapshot& snapshot) {
+  const double bid = static_cast<double>(snapshot.bids[0].size);
+  const double ask = static_cast<double>(snapshot.asks[0].size);
+  const double displayed_depth = bid + ask;
+  return displayed_depth > 0.0
+             ? (bid - ask) / displayed_depth
+             : 0.0;
+}
+
+double bounded_order_flow_pressure(
+    std::int64_t cumulative_ofi,
+    const BookSnapshot& snapshot) {
+  const double displayed_depth =
+      static_cast<double>(snapshot.bids[0].size) +
+      snapshot.asks[0].size;
+  if (displayed_depth <= 0.0) {
+    return 0.0;
+  }
+  const double depth_units =
+      static_cast<double>(cumulative_ofi) / displayed_depth;
+  return 2.0 * std::atan(depth_units) /
+         std::numbers::pi_v<double>;
+}
+
 ReplayMetrics replay_dataset(const Dataset& dataset) {
   ReplayMetrics metrics;
   constexpr std::uint64_t fnv_offset = 14'695'981'039'346'656'037ULL;
@@ -628,6 +688,103 @@ void write_queue_imbalance_bins(
     };
     write_sample("all_events", all_events);
     write_sample("best_quote_updates", quote_updates);
+  }
+}
+
+void write_order_flow_signal_bins(
+    const Dataset& dataset,
+    const std::filesystem::path& output,
+    std::size_t bins) {
+  if (bins < 3) {
+    throw std::invalid_argument(
+        "order-flow grid size must be at least 3");
+  }
+  std::ofstream stream(output);
+  if (!stream) {
+    throw std::runtime_error(
+        "cannot write order-flow signal bins: " + output.string());
+  }
+  stream
+      << "date,sample,spread_bucket,queue_bin,ofi_bin,queue_center,"
+         "ofi_center,observations,up_moves,down_moves\n";
+  stream << std::setprecision(10);
+
+  for (const SessionData& session : dataset.sessions) {
+    std::array<std::vector<BinCount>, spread_bucket_names.size()>
+        counts;
+    for (std::vector<BinCount>& bucket_counts : counts) {
+      bucket_counts.resize(bins * bins);
+    }
+
+    std::size_t run_start = 0;
+    while (run_start < session.events.size()) {
+      const std::int64_t current_mid =
+          midpoint_twice(session.events[run_start].book);
+      std::size_t next_run = run_start + 1;
+      while (
+          next_run < session.events.size() &&
+          midpoint_twice(session.events[next_run].book) == current_mid) {
+        ++next_run;
+      }
+      if (next_run == session.events.size()) {
+        break;
+      }
+      const int direction =
+          midpoint_twice(session.events[next_run].book) > current_mid
+              ? 1
+              : -1;
+
+      std::int64_t cumulative_ofi = 0;
+      for (std::size_t index = run_start;
+           index < next_run;
+           ++index) {
+        const BookSnapshot& snapshot = session.events[index].book;
+        if (index > run_start) {
+          cumulative_ofi += top_of_book_ofi(
+              session.events[index - 1].book,
+              snapshot);
+        }
+        if (
+            index != run_start &&
+            same_best_quote(
+                session.events[index - 1].book,
+                snapshot)) {
+          continue;
+        }
+
+        const std::size_t queue = signal_bin(
+            level_one_queue_imbalance(snapshot),
+            bins);
+        const std::size_t ofi = signal_bin(
+            bounded_order_flow_pressure(cumulative_ofi, snapshot),
+            bins);
+        const std::size_t cell = queue * bins + ofi;
+        const std::size_t bucket = spread_bucket(snapshot);
+        accumulate_bin(counts[0][cell], direction);
+        accumulate_bin(counts[bucket][cell], direction);
+      }
+      run_start = next_run;
+    }
+
+    for (std::size_t bucket = 0;
+         bucket < spread_bucket_names.size();
+         ++bucket) {
+      for (std::size_t queue = 0; queue < bins; ++queue) {
+        for (std::size_t ofi = 0; ofi < bins; ++ofi) {
+          const BinCount& count = counts[bucket][queue * bins + ofi];
+          if (count.observations == 0) {
+            continue;
+          }
+          stream
+              << session.date << ",best_quote_updates,"
+              << spread_bucket_names[bucket] << ',' << queue << ','
+              << ofi << ',' << bin_center(queue, bins) << ','
+              << bin_center(ofi, bins) << ',' << count.observations
+              << ',' << count.up_moves << ',' << count.down_moves
+              << '\n';
+        }
+      }
+    }
   }
 }
 

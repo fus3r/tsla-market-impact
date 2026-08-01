@@ -8,9 +8,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import log_loss, roc_auc_score
 
 from .data import required_columns
+from .next_move import (
+    compressed_binary_rows,
+    day_cluster_brier_comparison,
+    weighted_binary_scores,
+)
 from .plots import plot_queue_imbalance_forecast
 from .policy import (
     AnalysisPolicy,
@@ -30,78 +34,6 @@ QUEUE_BIN_COLUMNS = [
     "up_moves",
     "down_moves",
 ]
-
-
-def _compressed_binary_rows(
-    frame: pd.DataFrame,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    features = np.repeat(frame[["bin_center"]].to_numpy(dtype=float), 2, axis=0)
-    targets = np.tile([1, 0], len(frame))
-    weights = frame[["up_moves", "down_moves"]].to_numpy(dtype=float).reshape(-1)
-    keep = weights > 0
-    return features[keep], targets[keep], weights[keep]
-
-
-def _weighted_binary_scores(
-    targets: np.ndarray,
-    probabilities: np.ndarray,
-    weights: np.ndarray,
-) -> dict[str, float]:
-    predicted = probabilities >= 0.5
-    brier = np.average((targets - probabilities) ** 2, weights=weights)
-    return {
-        "roc_auc": float(
-            roc_auc_score(targets, probabilities, sample_weight=weights)
-        ),
-        "log_loss": float(log_loss(targets, probabilities, sample_weight=weights)),
-        "brier_score": float(brier),
-        "accuracy": float(np.average(predicted == targets, weights=weights)),
-    }
-
-
-def _day_cluster_brier_improvement(
-    test: pd.DataFrame,
-    model_probability: np.ndarray,
-    baseline_probability: float,
-    replicates: int,
-    random_state: int,
-) -> dict[str, float | int]:
-    if len(test) != len(model_probability):
-        raise ValueError("model_probability must have one value per aggregate row")
-    if replicates < 1:
-        raise ValueError("replicates must be positive")
-
-    up = test["up_moves"].to_numpy(dtype=float)
-    down = test["down_moves"].to_numpy(dtype=float)
-    model_sse = up * (1 - model_probability) ** 2 + down * model_probability**2
-    baseline_sse = (
-        up * (1 - baseline_probability) ** 2 + down * baseline_probability**2
-    )
-    daily = (
-        pd.DataFrame(
-            {
-                "date": test["date"].to_numpy(),
-                "model_sse": model_sse,
-                "baseline_sse": baseline_sse,
-            }
-        )
-        .groupby("date", sort=True, observed=True)
-        .sum()
-    )
-    values = daily[["model_sse", "baseline_sse"]].to_numpy(dtype=float)
-    random = np.random.default_rng(random_state)
-    sampled = random.integers(0, len(values), size=(replicates, len(values)))
-    totals = values[sampled].sum(axis=1)
-    improvements = 1 - totals[:, 0] / totals[:, 1]
-    lower, median, upper = np.quantile(improvements, [0.025, 0.5, 0.975])
-    return {
-        "clusters": int(len(values)),
-        "replicates": int(replicates),
-        "relative_brier_reduction_lower_95": float(lower),
-        "relative_brier_reduction_median": float(median),
-        "relative_brier_reduction_upper_95": float(upper),
-        "probability_nonpositive": float(np.mean(improvements <= 0)),
-    }
 
 
 def evaluate_queue_imbalance(
@@ -128,8 +60,8 @@ def evaluate_queue_imbalance(
     ):
         train = group.loc[group["date"].astype(str).isin(train_dates)].copy()
         test = group.loc[~group["date"].astype(str).isin(train_dates)].copy()
-        x_train, y_train, w_train = _compressed_binary_rows(train)
-        x_test, y_test, w_test = _compressed_binary_rows(test)
+        x_train, y_train, w_train = compressed_binary_rows(train, ["bin_center"])
+        x_test, y_test, w_test = compressed_binary_rows(test, ["bin_center"])
         if w_train.sum() == 0 or w_test.sum() == 0:
             continue
         if len(np.unique(y_train)) < 2 or len(np.unique(y_test)) < 2:
@@ -144,8 +76,8 @@ def evaluate_queue_imbalance(
         model_probability = model.predict_proba(x_test)[:, 1]
         baseline_probability = float(np.average(y_train, weights=w_train))
         baseline_predictions = np.full(len(y_test), baseline_probability)
-        model_scores = _weighted_binary_scores(y_test, model_probability, w_test)
-        baseline_scores = _weighted_binary_scores(
+        model_scores = weighted_binary_scores(y_test, model_probability, w_test)
+        baseline_scores = weighted_binary_scores(
             y_test,
             baseline_predictions,
             w_test,
@@ -154,13 +86,14 @@ def evaluate_queue_imbalance(
         row_probability = model.predict_proba(
             test[["bin_center"]].to_numpy(dtype=float)
         )[:, 1]
-        bootstrap = _day_cluster_brier_improvement(
+        bootstrap = day_cluster_brier_comparison(
             test,
             row_probability,
-            baseline_probability,
+            np.full(len(test), baseline_probability),
             bootstrap_replicates,
             random_state,
         )
+        bootstrap.pop("relative_brier_reduction")
         brier_reduction = (
             1 - model_scores["brier_score"] / baseline_scores["brier_score"]
         )

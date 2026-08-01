@@ -19,10 +19,12 @@ struct Options {
   std::filesystem::path analysis_policy{"analysis-policy.conf"};
   std::filesystem::path json_output;
   std::filesystem::path queue_bins_output;
+  std::filesystem::path order_flow_bins_output;
   int decode_runs{1};
   int replay_runs{7};
   int warmup_runs{1};
   std::size_t imbalance_bins{101};
+  std::size_t order_flow_grid{31};
   std::string machine;
 };
 
@@ -38,6 +40,8 @@ void print_usage(std::ostream& output) {
       << "  --json PATH              Write the benchmark record as JSON\n"
       << "  --queue-bins PATH        Write daily next-move queue aggregates\n"
       << "  --imbalance-bins N       Queue bins across [-1, 1] (default: 101)\n"
+      << "  --order-flow-bins PATH   Write daily joint queue/OFI aggregates\n"
+      << "  --order-flow-grid N      Bins per queue/OFI axis (default: 31)\n"
       << "  --machine TEXT           Machine label stored in the benchmark\n"
       << "  --help                   Show this help\n";
 }
@@ -94,6 +98,14 @@ Options parse_options(int argc, char** argv) {
           positive_integer(
               require_value(argc, argv, index),
               "imbalance bins"));
+    } else if (argument == "--order-flow-bins") {
+      options.order_flow_bins_output =
+          require_value(argc, argv, index);
+    } else if (argument == "--order-flow-grid") {
+      options.order_flow_grid = static_cast<std::size_t>(
+          positive_integer(
+              require_value(argc, argv, index),
+              "order-flow grid"));
     } else if (argument == "--machine") {
       options.machine = require_value(argc, argv, index);
     } else {
@@ -217,6 +229,12 @@ int main(int argc, char** argv) {
           dataset,
           options.queue_bins_output,
           options.imbalance_bins);
+    }
+    if (!options.order_flow_bins_output.empty()) {
+      tsla_lob::write_order_flow_signal_bins(
+          dataset,
+          options.order_flow_bins_output,
+          options.order_flow_grid);
     }
 
     const std::string report = tsla_lob::benchmark_json(

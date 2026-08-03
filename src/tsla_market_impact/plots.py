@@ -476,6 +476,78 @@ def plot_order_flow_signal_ablation(
     return output
 
 
+def plot_marketable_markouts(
+    metrics: pd.DataFrame,
+    path: Path | str,
+) -> Path:
+    """Plot gross and spread-adjusted next-move markouts by latency."""
+
+    palette = _style()
+    panels = [
+        ("all_spreads", "All spreads"),
+        ("one_tick", "One-tick spread"),
+    ]
+    figure, axes = plt.subplots(
+        1,
+        2,
+        figsize=(7.15, 3.25),
+        layout="constrained",
+    )
+    for panel, (axis, (bucket, title)) in enumerate(
+        zip(axes, panels, strict=True)
+    ):
+        part = metrics.loc[
+            metrics["sample"].eq("best_quote_updates")
+            & metrics["spread_bucket"].eq(bucket)
+            & metrics["model"].eq("queue_and_ofi")
+            & metrics["target_train_signal_fraction"].eq(0.10)
+        ].sort_values("latency_us")
+        positions = np.arange(len(part))
+        gross = part["gross_midpoint_markout_mean_bps"].to_numpy(dtype=float)
+        net = part["net_markout_mean_bps"].to_numpy(dtype=float)
+        lower = part["net_markout_lower_95_bps"].to_numpy(dtype=float)
+        upper = part["net_markout_upper_95_bps"].to_numpy(dtype=float)
+        axis.plot(
+            positions,
+            gross,
+            marker="o",
+            color=palette["blue"],
+            linewidth=1.3,
+            markersize=4,
+            label="Midpoint markout",
+        )
+        axis.errorbar(
+            positions,
+            net,
+            yerr=np.vstack([net - lower, upper - net]),
+            fmt="o-",
+            color=palette["orange"],
+            capsize=2.5,
+            linewidth=1.2,
+            markersize=4,
+            label="After half-spread",
+        )
+        labels = []
+        for value in part["latency_us"].astype(int):
+            if value == 0:
+                labels.append("0")
+            elif value < 1_000:
+                labels.append(f"{value} us")
+            else:
+                labels.append(f"{value // 1_000} ms")
+        axis.set_xticks(positions, labels)
+        axis.axhline(0, color=palette["line"], linewidth=0.9)
+        axis.set_title(f"({chr(97 + panel)})  {title}", loc="left")
+        axis.set_xlabel("Decision-to-entry latency")
+        axis.set_ylabel("Basis points per executable signal")
+        _clean_axis(axis)
+    axes[0].legend(loc="best")
+    output = _prepare_path(path)
+    figure.savefig(output, bbox_inches="tight")
+    plt.close(figure)
+    return output
+
+
 def plot_scaling_collapse(
     collapsed: pd.DataFrame,
     shape: dict[str, float],

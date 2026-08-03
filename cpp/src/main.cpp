@@ -3,7 +3,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <numeric>
+#include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -20,11 +23,14 @@ struct Options {
   std::filesystem::path json_output;
   std::filesystem::path queue_bins_output;
   std::filesystem::path order_flow_bins_output;
+  std::filesystem::path markout_bins_output;
   int decode_runs{1};
   int replay_runs{7};
   int warmup_runs{1};
   std::size_t imbalance_bins{101};
   std::size_t order_flow_grid{31};
+  std::vector<std::uint64_t> markout_latencies_us{
+      0, 10, 100, 1'000, 10'000};
   std::string machine;
 };
 
@@ -42,6 +48,9 @@ void print_usage(std::ostream& output) {
       << "  --imbalance-bins N       Queue bins across [-1, 1] (default: 101)\n"
       << "  --order-flow-bins PATH   Write daily joint queue/OFI aggregates\n"
       << "  --order-flow-grid N      Bins per queue/OFI axis (default: 31)\n"
+      << "  --markout-bins PATH      Write daily marketable markout aggregates\n"
+      << "  --markout-latencies-us L Comma-separated decision latencies "
+         "(default: 0,10,100,1000,10000)\n"
       << "  --machine TEXT           Machine label stored in the benchmark\n"
       << "  --help                   Show this help\n";
 }
@@ -64,6 +73,38 @@ int positive_integer(
   if (consumed != value.size() ||
       (allow_zero ? parsed < 0 : parsed < 1)) {
     throw std::invalid_argument("invalid " + name + ": " + value);
+  }
+  return parsed;
+}
+
+std::vector<std::uint64_t> nonnegative_integer_list(
+    const std::string& value,
+    const std::string& name) {
+  std::vector<std::uint64_t> parsed;
+  std::set<std::uint64_t> seen;
+  std::istringstream stream(value);
+  std::string token;
+  while (std::getline(stream, token, ',')) {
+    if (token.empty() || token.front() == '-') {
+      throw std::invalid_argument(
+          "invalid " + name + ": " + value);
+    }
+    std::size_t consumed = 0;
+    const unsigned long long candidate =
+        std::stoull(token, &consumed);
+    if (
+        consumed != token.size() ||
+        candidate >
+            std::numeric_limits<std::uint64_t>::max() / 1'000ULL ||
+        !seen.insert(static_cast<std::uint64_t>(candidate)).second) {
+      throw std::invalid_argument(
+          "invalid " + name + ": " + value);
+    }
+    parsed.push_back(static_cast<std::uint64_t>(candidate));
+  }
+  if (parsed.empty()) {
+    throw std::invalid_argument(
+        "invalid " + name + ": " + value);
   }
   return parsed;
 }
@@ -106,6 +147,13 @@ Options parse_options(int argc, char** argv) {
           positive_integer(
               require_value(argc, argv, index),
               "order-flow grid"));
+    } else if (argument == "--markout-bins") {
+      options.markout_bins_output =
+          require_value(argc, argv, index);
+    } else if (argument == "--markout-latencies-us") {
+      options.markout_latencies_us = nonnegative_integer_list(
+          require_value(argc, argv, index),
+          "markout latencies");
     } else if (argument == "--machine") {
       options.machine = require_value(argc, argv, index);
     } else {
@@ -234,6 +282,13 @@ int main(int argc, char** argv) {
       tsla_lob::write_order_flow_signal_bins(
           dataset,
           options.order_flow_bins_output,
+          options.order_flow_grid);
+    }
+    if (!options.markout_bins_output.empty()) {
+      tsla_lob::write_marketable_markout_bins(
+          dataset,
+          options.markout_bins_output,
+          options.markout_latencies_us,
           options.order_flow_grid);
     }
 

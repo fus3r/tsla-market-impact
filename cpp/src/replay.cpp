@@ -131,6 +131,15 @@ struct BinCount {
   std::uint64_t down_moves{};
 };
 
+struct MarkoutCount {
+  std::uint64_t signals{};
+  std::uint64_t executable{};
+  std::uint64_t up_moves{};
+  std::uint64_t down_moves{};
+  long double midpoint_move_sum_bps{};
+  long double half_spread_sum_bps{};
+};
+
 constexpr std::array<std::string_view, 5> spread_bucket_names = {
     "all_spreads",
     "one_tick",
@@ -782,6 +791,188 @@ void write_order_flow_signal_bins(
               << bin_center(ofi, bins) << ',' << count.observations
               << ',' << count.up_moves << ',' << count.down_moves
               << '\n';
+        }
+      }
+    }
+  }
+}
+
+void write_marketable_markout_bins(
+    const Dataset& dataset,
+    const std::filesystem::path& output,
+    const std::vector<std::uint64_t>& latencies_us,
+    std::size_t bins) {
+  if (bins < 3) {
+    throw std::invalid_argument(
+        "markout grid size must be at least 3");
+  }
+  if (latencies_us.empty()) {
+    throw std::invalid_argument(
+        "at least one markout latency is required");
+  }
+  if (std::set<std::uint64_t>(
+          latencies_us.begin(),
+          latencies_us.end()).size() != latencies_us.size()) {
+    throw std::invalid_argument(
+        "markout latencies must be unique");
+  }
+
+  std::ofstream stream(output);
+  if (!stream) {
+    throw std::runtime_error(
+        "cannot write marketable markout bins: " + output.string());
+  }
+  stream
+      << "date,sample,spread_bucket,latency_us,queue_bin,ofi_bin,"
+         "queue_center,ofi_center,signals,executable,stale,up_moves,"
+         "down_moves,midpoint_move_sum_bps,half_spread_sum_bps\n";
+  stream << std::setprecision(12);
+
+  for (const SessionData& session : dataset.sessions) {
+    std::vector<
+        std::array<
+            std::vector<MarkoutCount>,
+            spread_bucket_names.size()>>
+        latency_counts(latencies_us.size());
+    for (auto& counts : latency_counts) {
+      for (std::vector<MarkoutCount>& bucket_counts : counts) {
+        bucket_counts.resize(bins * bins);
+      }
+    }
+
+    std::size_t run_start = 0;
+    while (run_start < session.events.size()) {
+      const std::int64_t current_mid =
+          midpoint_twice(session.events[run_start].book);
+      std::size_t next_run = run_start + 1;
+      while (
+          next_run < session.events.size() &&
+          midpoint_twice(session.events[next_run].book) == current_mid) {
+        ++next_run;
+      }
+      if (next_run == session.events.size()) {
+        break;
+      }
+
+      const std::int64_t future_mid =
+          midpoint_twice(session.events[next_run].book);
+      const int direction = future_mid > current_mid ? 1 : -1;
+      std::int64_t cumulative_ofi = 0;
+      std::vector<std::size_t> execution_cursor(
+          latencies_us.size(),
+          run_start);
+
+      for (std::size_t index = run_start;
+           index < next_run;
+           ++index) {
+        const BookSnapshot& snapshot = session.events[index].book;
+        if (index > run_start) {
+          cumulative_ofi += top_of_book_ofi(
+              session.events[index - 1].book,
+              snapshot);
+        }
+        if (
+            index != run_start &&
+            same_best_quote(
+                session.events[index - 1].book,
+                snapshot)) {
+          continue;
+        }
+
+        const std::size_t queue = signal_bin(
+            level_one_queue_imbalance(snapshot),
+            bins);
+        const std::size_t ofi = signal_bin(
+            bounded_order_flow_pressure(cumulative_ofi, snapshot),
+            bins);
+        const std::size_t cell = queue * bins + ofi;
+        const std::size_t bucket = spread_bucket(snapshot);
+        const std::uint64_t signal_time =
+            session.events[index].message.timestamp_ns;
+
+        for (std::size_t latency = 0;
+             latency < latencies_us.size();
+             ++latency) {
+          auto accumulate = [&](std::size_t spread_index) {
+            MarkoutCount& count =
+                latency_counts[latency][spread_index][cell];
+            ++count.signals;
+            if (direction > 0) {
+              ++count.up_moves;
+            } else {
+              ++count.down_moves;
+            }
+
+            std::size_t& execution = execution_cursor[latency];
+            execution = std::max(execution, index);
+            const std::uint64_t latency_ns =
+                latencies_us[latency] * 1'000ULL;
+            if (latency_ns >
+                std::numeric_limits<std::uint64_t>::max() - signal_time) {
+              throw std::overflow_error(
+                  "markout deadline exceeds uint64 range");
+            }
+            const std::uint64_t deadline = signal_time + latency_ns;
+            if (latencies_us[latency] == 0) {
+              execution = index;
+            } else {
+              if (deadline >=
+                  session.events[next_run].message.timestamp_ns) {
+                return;
+              }
+              while (
+                  execution + 1 < next_run &&
+                  session.events[execution + 1].message.timestamp_ns <
+                      deadline) {
+                ++execution;
+              }
+            }
+
+            const BookSnapshot& entry = session.events[execution].book;
+            const std::int64_t entry_mid = midpoint_twice(entry);
+            const std::int64_t spread =
+                static_cast<std::int64_t>(entry.asks[0].price) -
+                entry.bids[0].price;
+            ++count.executable;
+            count.midpoint_move_sum_bps +=
+                static_cast<long double>(future_mid - entry_mid) *
+                10'000.0L / static_cast<long double>(entry_mid);
+            count.half_spread_sum_bps +=
+                static_cast<long double>(spread) * 10'000.0L /
+                static_cast<long double>(entry_mid);
+          };
+          accumulate(0);
+          accumulate(bucket);
+        }
+      }
+      run_start = next_run;
+    }
+
+    for (std::size_t latency = 0;
+         latency < latencies_us.size();
+         ++latency) {
+      for (std::size_t bucket = 0;
+           bucket < spread_bucket_names.size();
+           ++bucket) {
+        for (std::size_t queue = 0; queue < bins; ++queue) {
+          for (std::size_t ofi = 0; ofi < bins; ++ofi) {
+            const MarkoutCount& count =
+                latency_counts[latency][bucket][queue * bins + ofi];
+            if (count.signals == 0) {
+              continue;
+            }
+            stream
+                << session.date << ",best_quote_updates,"
+                << spread_bucket_names[bucket] << ','
+                << latencies_us[latency] << ',' << queue << ','
+                << ofi << ',' << bin_center(queue, bins) << ','
+                << bin_center(ofi, bins) << ',' << count.signals << ','
+                << count.executable << ','
+                << count.signals - count.executable << ','
+                << count.up_moves << ',' << count.down_moves << ','
+                << count.midpoint_move_sum_bps << ','
+                << count.half_spread_sum_bps << '\n';
+          }
         }
       }
     }

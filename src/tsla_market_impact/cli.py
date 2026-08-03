@@ -11,6 +11,7 @@ from .data import (
     prepare_visible_market_orders,
     run_session_coverage_audit,
 )
+from .markouts import run_marketable_markout_analysis
 from .orderflow import run_order_flow_analysis, run_order_flow_grid_robustness
 from .pipeline import run_analysis
 from .policy import DEFAULT_ANALYSIS_POLICY, load_analysis_policy
@@ -62,6 +63,15 @@ def _parser() -> argparse.ArgumentParser:
         help="Joint signal grid, repeated for at least two resolutions.",
     )
     order_flow_grid.add_argument("--results", type=Path, default=Path("results"))
+
+    markouts = subparsers.add_parser("analyze-markouts")
+    markouts.add_argument("--bins", type=Path, required=True)
+    markouts.add_argument("--results", type=Path, default=Path("results"))
+    markouts.add_argument(
+        "--figures",
+        type=Path,
+        default=Path("report/figures"),
+    )
 
     for command in subparsers.choices.values():
         command.add_argument(
@@ -135,6 +145,13 @@ def main() -> None:
         result = run_order_flow_grid_robustness(
             _grid_bin_specs(args.bins),
             args.results,
+            analysis_policy=policy,
+        )
+    elif args.command == "analyze-markouts":
+        result = run_marketable_markout_analysis(
+            args.bins,
+            args.results,
+            args.figures,
             analysis_policy=policy,
         )
     print(json.dumps(result, indent=2))

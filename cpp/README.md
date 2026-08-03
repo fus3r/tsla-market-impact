@@ -68,6 +68,27 @@ excluded. Multiple states can share the same eventual direction, so the
 statistical analysis resamples complete trading dates rather than treating
 states as independent trials.
 
+## Marketable markout aggregates
+
+The markout exporter applies the same causal queue/OFI grid to a hypothetical
+one-unit marketable order at decision-to-entry latencies of 0, 10, 100, 1,000,
+or 10,000 microseconds. At positive latency, a next move stamped at or before
+the deadline makes the signal stale, and events stamped exactly at the deadline
+do not update the entry book. Zero latency uses the signal's post-event state,
+preserving file order. If the state survives, the position is marked at the
+midpoint immediately after the next mid-price change.
+
+Daily grid cells contain only counts, the sum of signed midpoint moves in basis
+points, and the sum of displayed half-spreads. Python fits the direction model
+and every confidence cutoff on the 198 pre-test dates, so no row-level book
+state or late-date threshold enters the repository.
+
+This is not an execution simulator. It assumes a one-unit fill at the displayed
+best, omits fees and impact, and applies one aggregate delay to LOBSTER event
+time without identifying feed, computation, transmission, or exchange
+processing. Overlapping states remain separate diagnostics rather than additive
+returns.
+
 ## Annual replay and benchmark
 
 The replay command discovers the level-2 pairs named by the shared
@@ -90,7 +111,9 @@ cmake --build build
   --json results/lobster_replay_benchmark.json \
   --queue-bins data/processed/queue-imbalance-bins.csv \
   --order-flow-bins data/processed/order-flow-bins-31.csv \
-  --order-flow-grid 31
+  --order-flow-grid 31 \
+  --markout-bins data/processed/marketable-markout-bins-31.csv \
+  --markout-latencies-us 0,10,100,1000,10000
 ```
 
 The committed aggregate covers 38,516,432 events. Excluding the 249 session
@@ -105,8 +128,8 @@ The benchmark reports two distinct costs:
 - `in_memory_replay` scans the included resident records, audits transitions,
   validates snapshots, and maintains a checksum.
 
-The queue and order-flow exports are separate passes after the measured replay
-and are not included in either timing.
+The queue, order-flow, and markout exports are separate passes after the
+measured replay and are not included in either timing.
 
 The committed Release benchmark used one thread on an Apple M4 Pro. Its
 38,516,432 included events occupy 2,465,051,648 bytes as resident event

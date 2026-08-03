@@ -16,10 +16,10 @@
 \usepackage[hidelinks]{hyperref}
 
 \hypersetup{
-  pdftitle={Signed order count, queue imbalance, OFI, and depth-aware replay: TSLA, 2019},
+  pdftitle={Signed order count, order-book signals, markouts, and depth-aware replay: TSLA, 2019},
   pdfauthor={Riad Darwish},
-  pdfsubject={Conditional impact, next-price prediction, and finite-depth replay},
-  pdfkeywords={market impact, queue imbalance, order flow imbalance, market microstructure, LOBSTER, C++, TSLA}
+  pdfsubject={Conditional impact, next-price prediction, marketable markouts, and finite-depth replay},
+  pdfkeywords={market impact, marketable markout, queue imbalance, order flow imbalance, market microstructure, LOBSTER, C++, TSLA}
 }
 
 \input{results.tex}
@@ -53,7 +53,7 @@
   \vspace{6mm}
   {\large Riad Darwish\par}
   {\normalsize CentraleSup\'elec\par}
-  {\normalsize 1 August 2026\par}
+  {\normalsize 3 August 2026\par}
 \end{center}
 
 \vspace{3mm}
@@ -97,7 +97,13 @@ mid-price change from current queue imbalance and causal top-of-book OFI. The
 combined model reaches ROC-AUC \CombinedAllAuc{} and reduces Brier score by
 \CombinedAllBrierReduction{} across all spreads. In the exploratory one-tick
 subset, the corresponding values are \CombinedOneTickAuc{} and
-\CombinedOneTickBrierReduction{}.
+\CombinedOneTickBrierReduction{}. A marketable-markout gate subtracts the
+displayed half-spread and delays entry. The top 10 percent of
+training-confidence one-tick states have a net markout of
+\MarkoutOneTickZeroNet{} basis points immediately and
+\MarkoutOneTickTenNet{} at 10 microseconds, but the 100-microsecond interval
+crosses zero. Across all spreads, even zero-latency markout is
+\MarkoutAllZeroNet{} basis points.
 
 I also apply the finite-size scaling construction of \citet{patzelt2018} to the
 same stock-year. The width and height scale regressions have in-sample \Rtwo{}
@@ -120,20 +126,22 @@ the study does not claim complete 2019 coverage or external replication.
 \end{center}
 
 \vspace{0.5em}
-\textbf{Keywords:} market impact, queue imbalance, order-flow imbalance,
-market microstructure, chronological validation, order-book replay,
-finite-size scaling
+\textbf{Keywords:} market impact, marketable markout, queue imbalance,
+order-flow imbalance, market microstructure, chronological validation,
+order-book replay, finite-size scaling
 
 \section{Question}
 
 In the local benchmark of \citet{kyle1985}, signed order flow and price change
 are connected by a linear slope. Empirical impact curves bend, change scale with
 the aggregation horizon, and reflect persistent trade signs
-\citep{bouchaud2018,patzelt2018}. I ask two distinct questions for TSLA in 2019.
+\citep{bouchaud2018,patzelt2018}. I ask three distinct questions for TSLA in
+2019.
 First, does signed order count explain conditional price impact on later dates
 after signed volume has already been included? Second, do the current queues
 and order-flow changes observed since the last price move forecast the
-direction of the next move?
+direction of the next move? Third, does that direction signal survive the
+displayed spread and an explicit delay between decision and entry?
 
 Signed volume alone explains \BaselineRtwo{} of the holdout variance. Fixed
 volume transforms explain \VolumeRtwo{}. Adding raw signed count brings the
@@ -666,6 +674,108 @@ queue position is not a trading strategy.
   \label{fig:queue}
 \end{figure}
 
+\subsection{Marketable markout gate}
+
+The direction scores do not include the cost of crossing the book. I therefore
+apply a separate, deliberately narrow execution diagnostic to the same
+best-quote-update states. For each logistic model, the first 198 dates determine
+confidence cutoffs targeting 100, 20, 10, and 5 percent of training signals,
+where confidence is $|\hat p_t-0.5|$. A retained state buys when
+$\hat p_t\geq0.5$ and sells otherwise. No holdout outcome or holdout probability
+quantile sets a cutoff.
+
+Let $s_t\in\{-1,1\}$ be that decision, let $m_{t,\delta}$ and
+$h_{t,\delta}$ be the prevailing midpoint and half-spread when latency
+$\delta$ elapses, and let $m_{\tau(t)^+}$ be the midpoint immediately after the
+next price change. At positive latency, a next move stamped at or before the
+entry deadline makes the signal stale. Otherwise,
+\begin{align}
+  G_{t,\delta}
+    &=10^4s_t\frac{m_{\tau(t)^+}-m_{t,\delta}}{m_{t,\delta}},\\
+  N_{t,\delta}
+    &=G_{t,\delta}-10^4\frac{h_{t,\delta}}{m_{t,\delta}}.
+\end{align}
+$G$ is the signed midpoint markout and $N$ subtracts the displayed half-spread.
+The exporter evaluates $\delta\in\{0,10,100,1000,10000\}$ microseconds. Entry
+uses the last displayed book state strictly before a positive-latency deadline,
+so an event stamped exactly at that deadline is excluded. Event ordering
+defines the zero-latency post-event state.
+
+Table~\ref{tab:markouts} reports the combined queue/OFI model. Across all
+spreads, the 10-percent rule has a zero-latency gross markout of
+\MarkoutAllZeroGross{} basis points but pays \MarkoutAllZeroSpread{} basis
+points of half-spread, leaving \MarkoutAllZeroNet{}
+$[\MarkoutAllZeroLower{},\,\MarkoutAllZeroUpper{}]$. Directional information is
+therefore too small to cover marketable entry in the pooled sample.
+
+\begin{table}[H]
+  \centering
+  \caption{Combined-model marketable markouts on the final 51 dates. Confidence
+  fractions and model coefficients are fixed on the first 198 dates. Intervals
+  are from 10,000 complete-date bootstrap resamples.}
+  \label{tab:markouts}
+  \small
+  \begin{tabular}{llrrrr}
+    \toprule
+    Train-confidence & Spread & Latency & Executable & Stale & Net bp [95\% interval] \\
+    \midrule
+    10\% & All & 0 us & \MarkoutAllSignals{} & 0.0\% &
+      \MarkoutAllZeroNet{} [\MarkoutAllZeroLower{}, \MarkoutAllZeroUpper{}] \\
+    10\% & One tick & 0 us & \MarkoutOneTickSignals{} & 0.0\% &
+      \MarkoutOneTickZeroNet{} [\MarkoutOneTickZeroLower{}, \MarkoutOneTickZeroUpper{}] \\
+    10\% & One tick & 10 us & \MarkoutOneTickTenExecutable{} &
+      \MarkoutOneTickTenStale{} &
+      \MarkoutOneTickTenNet{} [\MarkoutOneTickTenLower{}, \MarkoutOneTickTenUpper{}] \\
+    10\% & One tick & 100 us & \MarkoutOneTickHundredExecutable{} &
+      \MarkoutOneTickHundredStale{} &
+      \MarkoutOneTickHundredNet{} [\MarkoutOneTickHundredLower{}, \MarkoutOneTickHundredUpper{}] \\
+    5\% & One tick & 100 us & \MarkoutTailHundredExecutable{} & 84.0\% &
+      \MarkoutTailHundredNet{} [\MarkoutTailHundredLower{}, \MarkoutTailHundredUpper{}] \\
+    5\% & One tick & 1 ms & \MarkoutTailThousandExecutable{} & 93.5\% &
+      \MarkoutTailThousandNet{} [\MarkoutTailThousandLower{}, \MarkoutTailThousandUpper{}] \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The exploratory one-tick subset behaves differently. At the 10-percent rule,
+the immediate midpoint markout is \MarkoutOneTickZeroGross{} basis points and
+the half-spread is \MarkoutOneTickZeroSpread{}, leaving
+\MarkoutOneTickZeroNet{}
+$[\MarkoutOneTickZeroLower{},\,\MarkoutOneTickZeroUpper{}]$. At 10
+microseconds, the net remains \MarkoutOneTickTenNet{}
+$[\MarkoutOneTickTenLower{},\,\MarkoutOneTickTenUpper{}]$, although
+\MarkoutOneTickTenStale{} of selected states have already reached their next
+mid-price move. At 100 microseconds, \MarkoutOneTickHundredStale{} are stale and
+the 10-percent interval crosses zero.
+
+The pre-specified 5-percent tail remains positive at 100 microseconds, but only
+\MarkoutTailHundredExecutable{} holdout states are executable; by 1 millisecond
+its interval crosses zero. Model ordering also changes with the cost diagnostic:
+at the 10-percent rule and 100 microseconds, OFI alone has a net markout of
+0.102 basis points $[0.010,\,0.203]$, while the combined interval crosses zero.
+Higher next-move Brier improvement does not automatically imply a better
+execution-conditioned tail.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/marketable-markouts.pdf}
+  \caption{Gross midpoint and half-spread-adjusted markouts for the combined
+  model's 10-percent training-confidence rule. Orange bars are 95 percent
+  intervals from complete-date resampling. Signals whose next price move
+  precedes entry are excluded from the per-execution mean and reported as
+  stale in Table~\ref{tab:markouts}.}
+  \label{fig:markouts}
+\end{figure}
+
+This gate is not a backtest. Several states in one constant-mid-price spell
+share the same terminal mark, so their hypothetical trades are not additive.
+The order size is one unit, displayed depth is assumed fillable, and fees,
+market impact, inventory, capital, and risk limits are absent. The imposed
+delay is applied to LOBSTER event time without separating feed, computation,
+transmission, or exchange processing. The one-tick stratum, confidence tails,
+and latency comparisons are multiple exploratory views without a family-wise
+correction.
+
 \section{Scaling analysis}
 \label{sec:scaling}
 
@@ -763,6 +873,14 @@ this included TSLA sample in-sample; the cross-asset claim in
   label. The scores do not represent independent event trials; uncertainty is
   resampled at the trading-date level. OFI also depends on the waiting horizon
   to that next move, so another horizon defines a different feature.
+  \item The marketable-markout gate assumes a one-unit fill at the displayed
+  best quote. It omits fees, impact, queueing, inventory, capital, and risk
+  limits. The stated latency is one exogenous delay applied to LOBSTER event
+  time; it does not identify components of an implementable system.
+  \item Markout confidence, latency, spread, and model comparisons are
+  exploratory and receive no family-wise multiple-testing correction. The
+  complete-date bootstrap addresses within-day dependence but not protocol
+  selection.
   \item The one-tick spread stratification is exploratory. Its stronger result
   is not evidence of generalization beyond this stock-year.
   \item The joint logistic models use fixed binned features rather than raw
@@ -790,12 +908,13 @@ an aggregate scheduled-close audit. It then reconstructs the two transaction
 tables from the included sessions, builds event-time windows, fits the models,
 and writes the remaining aggregate files under \texttt{results/}. The C++20
 library loads the same policy, rejects undeclared incomplete sessions, audits
-finite-depth transitions, and exports daily queue and joint queue/OFI bins. The
-figures are vector PDFs. Synthetic tests cover file pairing, source coverage,
-half-day filtering, book alignment, day boundaries, fixed chronological
-splits, complete-date resampling, queue/OFI ablation, grid robustness, and the
-scaling regressions. Reproducing the annual transaction tables, replay, and
-aggregate grids requires licensed LOBSTER files, which are not tracked.
+finite-depth transitions, and exports daily queue, joint queue/OFI, and
+marketable-markout bins. The figures are vector PDFs. Synthetic tests cover
+file pairing, source coverage, half-day filtering, book alignment, day
+boundaries, fixed chronological splits, complete-date resampling, queue/OFI
+ablation, markout accounting, grid robustness, and the scaling regressions.
+Reproducing the annual transaction tables, replay, and aggregate grids requires
+licensed LOBSTER files, which are not tracked.
 
 The course presentation lists L. Cohen, R. Darwish, A. Pariente, H. Rohrbach,
 and R. Sithisak. Anastasia Bugaenko supervised the work. I wrote this standalone
@@ -822,10 +941,20 @@ reaches ROC-AUC \CombinedAllAuc{} and reduces Brier score by
 other in the exploratory one-tick subset, where the combined ROC-AUC is
 \CombinedOneTickAuc{}.
 
+The execution-cost gate changes the interpretation. The pooled direction score
+does not cover the displayed spread even at zero latency. The exploratory
+one-tick 10-percent confidence tail has an immediate net markout of
+\MarkoutOneTickZeroNet{} basis points and remains positive at 10 microseconds,
+but its 100-microsecond interval crosses zero and \MarkoutOneTickHundredStale{}
+of candidate states are stale. The 5-percent tail survives 100 microseconds on
+only \MarkoutTailHundredExecutable{} executable test states, then loses a
+detectable advantage by 1 millisecond.
+
 The included TSLA sessions also fit the scaling form proposed by
 \citet{patzelt2018}. This is a within-sample application to one stock-year, not
 an external replication. The supervised model is evaluated by the
-chronological score.
+chronological score, while the markouts are state-level diagnostics with
+idealized fills. Neither establishes a deployable trading strategy.
 
 \bibliographystyle{plainnat}
 \bibliography{references}

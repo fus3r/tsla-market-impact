@@ -8,7 +8,9 @@ the three unavailable truncated pairs.
 The first question asks whether signed order count adds information about a
 same-window mid-price change after signed share volume is known. A separate
 forward experiment asks whether current queue imbalance and causal top-of-book
-order flow predict the direction of the next mid-price change.
+order flow predict the direction of the next mid-price change. A marketable
+markout gate then asks whether those direction scores survive the displayed
+spread and an explicit decision-to-entry delay.
 
 It does in this sample. The fixed test period begins on 18 October, after 198
 included training dates, and contains 51 dates with no trimming of the response.
@@ -50,6 +52,26 @@ an interval of 5.22% to 8.79%. The pooled and one-tick conclusions are unchanged
 with 21, 31, and 41 bins per feature axis. Several states share one next-move
 label, OFI depends on the waiting horizon, and a direction score before fees,
 latency, and queue position is not a trading strategy.
+
+The markout diagnostic converts the combined signal into buy/sell decisions,
+prices a one-unit marketable order at the displayed best quote, and marks it at
+the next mid-price change. Confidence cutoffs are weighted quantiles fixed on
+the first 198 included dates. For the 10% train-confidence rule:
+
+| Signal state | Entry latency | Executable test signals | Stale | Net markout |
+|---|---:|---:|---:|---:|
+| All spreads | 0 us | 555,039 | 0.0% | -1.254 bp [-1.364, -1.156] |
+| One-tick spread | 0 us | 5,787 | 0.0% | 0.399 bp [0.298, 0.500] |
+| One-tick spread | 10 us | 3,367 | 41.8% | 0.302 bp [0.135, 0.453] |
+| One-tick spread | 100 us | 1,311 | 77.3% | -0.035 bp [-0.422, 0.330] |
+
+The intervals resample complete test dates. The pre-specified 5% tail remains
+positive at 100 us, at 0.167 bp [0.075, 0.267], but only 482 test signals are
+executable; its 1 ms interval includes zero. These state-level opportunities
+overlap within constant-mid-price spells and are not additive returns. The
+diagnostic assumes a one-unit fill, omits fees, impact, inventory, capital, and
+risk limits, and applies one aggregate delay to LOBSTER event time. It is not a
+backtest or a deployable strategy result.
 
 The scaling analysis is separate. It applies the curve-collapse construction of
 Patzelt and Bouchaud to this included TSLA 2019 sample. The reported values
@@ -122,17 +144,18 @@ wire-to-wire trading latency.
 
 - `analysis-policy.conf` is the shared Python/C++ source and calendar policy.
 - `cpp/` contains the fixed-width decoder, annual source-integrity gate, replay
-  benchmark, daily queue and joint queue/OFI exporters, and the
-  [finite-depth transition contract](cpp/README.md).
+  benchmark, daily queue, joint queue/OFI, and marketable-markout exporters,
+  and the [finite-depth transition contract](cpp/README.md).
 - `src/tsla_market_impact/` contains the LOBSTER reconstruction, impact study,
-  and chronological queue/OFI ablation.
+  chronological queue/OFI ablation, and marketable-markout analysis.
 - `results/` contains aggregate tables, including the 252-row coverage audit
-  and annual level-2 replay, benchmark, queue-model, and order-flow results.
-  Licensed rows are not included.
+  and annual level-2 replay, benchmark, queue-model, order-flow, and markout
+  results. Licensed rows are not included.
 - `report/` contains the LaTeX source, figures, references, and compiled PDF.
 - `tests/` checks source integrity, data alignment, event-time windows,
-  chronological splits, complete-date bootstrap, queue evaluation, and scaling
-  fits, plus a complete CLI run on a hand-written redistributable session.
+  chronological splits, complete-date bootstrap, queue and markout evaluation,
+  and scaling fits, plus a complete CLI run on a hand-written redistributable
+  session.
 
 ## Data
 
@@ -220,7 +243,9 @@ Regenerate the annual C++ benchmark after the tests pass:
   --json results/lobster_replay_benchmark.json \
   --queue-bins data/processed/queue-imbalance-bins.csv \
   --order-flow-bins data/processed/order-flow-bins-31.csv \
-  --order-flow-grid 31
+  --order-flow-grid 31 \
+  --markout-bins data/processed/marketable-markout-bins-31.csv \
+  --markout-latencies-us 0,10,100,1000,10000
 ```
 
 The command audits every delivered pair, refuses any undeclared coverage
@@ -258,6 +283,17 @@ tsla-impact analyze-order-flow-grid \
 
 The joint grid remains local. The committed model, comparison, calibration,
 robustness, and vector-figure artifacts contain aggregate evidence only.
+
+Apply the train-defined confidence rules to the displayed-spread and latency
+diagnostic:
+
+```bash
+tsla-impact analyze-markouts \
+  --bins data/processed/marketable-markout-bins-31.csv
+```
+
+The daily markout grid remains local. The committed 300-row metric table, model
+metadata, and vector figure contain aggregate evidence only.
 
 ## Origin and credit
 

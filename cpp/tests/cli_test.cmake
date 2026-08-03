@@ -69,7 +69,14 @@ endforeach()
 set(BENCHMARK_JSON "${OUTPUT_DIR}/benchmark.json")
 set(QUEUE_BINS "${OUTPUT_DIR}/queue-bins.csv")
 set(ORDER_FLOW_BINS "${OUTPUT_DIR}/order-flow-bins.csv")
-file(REMOVE "${BENCHMARK_JSON}" "${QUEUE_BINS}" "${ORDER_FLOW_BINS}")
+set(MARKOUT_BINS "${OUTPUT_DIR}/markout-bins.csv")
+file(
+  REMOVE
+  "${BENCHMARK_JSON}"
+  "${QUEUE_BINS}"
+  "${ORDER_FLOW_BINS}"
+  "${MARKOUT_BINS}"
+)
 execute_process(
   COMMAND
     "${LOBSTER_REPLAY}"
@@ -83,6 +90,8 @@ execute_process(
     --imbalance-bins 11
     --order-flow-bins "${ORDER_FLOW_BINS}"
     --order-flow-grid 11
+    --markout-bins "${MARKOUT_BINS}"
+    --markout-latencies-us 0,1
     --machine "synthetic CTest fixture"
   RESULT_VARIABLE REPLAY_STATUS
   OUTPUT_VARIABLE REPLAY_STDOUT
@@ -118,6 +127,36 @@ if(
     FATAL_ERROR
     "unexpected synthetic dataset size: ${EVENTS} events, ${SESSIONS} sessions, "
     "${DELIVERED} delivered, ${EXCLUSIONS} exclusions"
+  )
+endif()
+
+file(READ "${MARKOUT_BINS}" MARKOUT_OUTPUT)
+string(
+  FIND
+  "${MARKOUT_OUTPUT}"
+  "date,sample,spread_bucket,latency_us,queue_bin,ofi_bin,queue_center,ofi_center,signals,executable,stale,up_moves,down_moves,midpoint_move_sum_bps,half_spread_sum_bps"
+  MARKOUT_HEADER_POSITION
+)
+string(
+  FIND
+  "${MARKOUT_OUTPUT}"
+  "2019-07-03,best_quote_updates,all_spreads,0,7,6,0.363636363636,0.181818181818,1,1,0,1,0,50,100"
+  ZERO_LATENCY_MARKOUT_POSITION
+)
+string(
+  FIND
+  "${MARKOUT_OUTPUT}"
+  "2019-07-03,best_quote_updates,all_spreads,1,7,6,0.363636363636,0.181818181818,1,0,1,1,0,0,0"
+  STALE_MARKOUT_POSITION
+)
+if(
+  NOT MARKOUT_HEADER_POSITION EQUAL 0
+  OR ZERO_LATENCY_MARKOUT_POSITION EQUAL -1
+  OR STALE_MARKOUT_POSITION EQUAL -1
+)
+  message(
+    FATAL_ERROR
+    "markout output does not match the synthetic execution path"
   )
 endif()
 

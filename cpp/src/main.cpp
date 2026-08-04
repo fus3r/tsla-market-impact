@@ -24,12 +24,16 @@ struct Options {
   std::filesystem::path queue_bins_output;
   std::filesystem::path order_flow_bins_output;
   std::filesystem::path markout_bins_output;
+  std::filesystem::path landmark_bins_output;
   int decode_runs{1};
   int replay_runs{7};
   int warmup_runs{1};
   std::size_t imbalance_bins{101};
   std::size_t order_flow_grid{31};
   std::vector<std::uint64_t> markout_latencies_us{
+      0, 10, 100, 1'000, 10'000};
+  std::uint64_t landmark_age_us{100};
+  std::vector<std::uint64_t> landmark_latencies_us{
       0, 10, 100, 1'000, 10'000};
   std::string machine;
 };
@@ -50,6 +54,10 @@ void print_usage(std::ostream& output) {
       << "  --order-flow-grid N      Bins per queue/OFI axis (default: 31)\n"
       << "  --markout-bins PATH      Write daily marketable markout aggregates\n"
       << "  --markout-latencies-us L Comma-separated decision latencies "
+         "(default: 0,10,100,1000,10000)\n"
+      << "  --landmark-bins PATH     Write one marketable markout per price spell\n"
+      << "  --landmark-age-us N      Positive signal age after spell start (default: 100)\n"
+      << "  --landmark-latencies-us L Comma-separated post-signal latencies "
          "(default: 0,10,100,1000,10000)\n"
       << "  --machine TEXT           Machine label stored in the benchmark\n"
       << "  --help                   Show this help\n";
@@ -154,6 +162,22 @@ Options parse_options(int argc, char** argv) {
       options.markout_latencies_us = nonnegative_integer_list(
           require_value(argc, argv, index),
           "markout latencies");
+    } else if (argument == "--landmark-bins") {
+      options.landmark_bins_output =
+          require_value(argc, argv, index);
+    } else if (argument == "--landmark-age-us") {
+      const auto parsed = nonnegative_integer_list(
+          require_value(argc, argv, index),
+          "landmark age");
+      if (parsed.size() != 1 || parsed.front() == 0) {
+        throw std::invalid_argument(
+            "landmark age must be one positive integer");
+      }
+      options.landmark_age_us = parsed.front();
+    } else if (argument == "--landmark-latencies-us") {
+      options.landmark_latencies_us = nonnegative_integer_list(
+          require_value(argc, argv, index),
+          "landmark latencies");
     } else if (argument == "--machine") {
       options.machine = require_value(argc, argv, index);
     } else {
@@ -289,6 +313,14 @@ int main(int argc, char** argv) {
           dataset,
           options.markout_bins_output,
           options.markout_latencies_us,
+          options.order_flow_grid);
+    }
+    if (!options.landmark_bins_output.empty()) {
+      tsla_lob::write_price_spell_landmark_bins(
+          dataset,
+          options.landmark_bins_output,
+          options.landmark_age_us,
+          options.landmark_latencies_us,
           options.order_flow_grid);
     }
 

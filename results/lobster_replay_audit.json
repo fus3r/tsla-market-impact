@@ -13,6 +13,7 @@
     "mismatches": 0,
     "unsupported": 0,
     "invalid_snapshots": 0,
+    "mid_price_changes": 15263228,
     "events_by_type": {
       "1": 17309650,
       "2": 35950,

@@ -10,7 +10,9 @@ same-window mid-price change after signed share volume is known. A separate
 forward experiment asks whether current queue imbalance and causal top-of-book
 order flow predict the direction of the next mid-price change. A marketable
 markout gate then asks whether those direction scores survive the displayed
-spread and an explicit decision-to-entry delay.
+spread and an explicit decision-to-entry delay. A second gate samples one
+fixed clock-time landmark per price spell so that candidate decisions no
+longer share a terminal price move.
 
 It does in this sample. The fixed test period begins on 18 October, after 198
 included training dates, and contains 51 dates with no trimming of the response.
@@ -73,6 +75,29 @@ diagnostic assumes a one-unit fill, omits fees, impact, inventory, capital, and
 risk limits, and applies one aggregate delay to LOBSTER event time. It is not a
 backtest or a deployable strategy result.
 
+The state-level diagnostic above gives several decisions in one
+constant-mid-price spell. The non-overlapping protocol instead observes the
+prevailing book exactly 100 us after each spell begins and discards spells that
+end at or before that landmark. This leaves 9,847,952 of 15,263,228 completed
+price spells (64.5%). The combined model reaches ROC-AUC 0.555 and a 0.91% Brier
+reduction [0.83%, 0.98%] across all spreads; the exploratory one-tick subset
+reaches 0.650 and 7.00% [5.65%, 8.45%]. For the target 10% train-confidence
+rule, grid ties raise achieved train coverage to 13.3% and 13.5% respectively:
+
+| Landmark sample | Post-landmark latency | Executable test signals | Stale | Net markout |
+|---|---:|---:|---:|---:|
+| All spreads | 0 us | 248,800 | 0.0% | -1.909 bp [-2.074, -1.752] |
+| One-tick spread | 0 us | 1,120 | 0.0% | 0.107 bp [0.045, 0.179] |
+| One-tick spread | 10 us | 1,006 | 10.2% | 0.059 bp [0.001, 0.125] |
+| One-tick spread | 100 us | 689 | 38.5% | -0.095 bp [-0.155, -0.035] |
+
+Each eligible spell contributes at most one decision, but this is still a
+markout study rather than a backtest: the terminal midpoint is not an
+executable exit, and fees, impact, fill uncertainty, inventory, capital, and
+risk limits remain absent. This filters short spells and changes the fitted
+confidence cutoff, so it is not a paired estimate of the state-level gate. The
+one-tick stratum remains exploratory on one stock-year.
+
 The scaling analysis is separate. It applies the curve-collapse construction of
 Patzelt and Bouchaud to this included TSLA 2019 sample. The reported values
 0.9958 and 0.9975 are in-sample fits of estimated scale parameters, not
@@ -112,7 +137,8 @@ per session, it classifies 28,544,808 transitions as exact and 9,971,375 as
 depth-censored, with no observable mismatch, unsupported event, or invalid
 snapshot. The committed
 [`results/lobster_replay_audit.json`](results/lobster_replay_audit.json)
-contains only these aggregate diagnostics and event-type counts.
+contains only these aggregate diagnostics, 15,263,228 mid-price changes, and
+event-type counts.
 
 ## C++ annual replay benchmark
 
@@ -144,18 +170,19 @@ wire-to-wire trading latency.
 
 - `analysis-policy.conf` is the shared Python/C++ source and calendar policy.
 - `cpp/` contains the fixed-width decoder, annual source-integrity gate, replay
-  benchmark, daily queue, joint queue/OFI, and marketable-markout exporters,
-  and the [finite-depth transition contract](cpp/README.md).
+  benchmark, daily queue, joint queue/OFI, state-level markout, and price-spell
+  landmark exporters, and the [finite-depth transition contract](cpp/README.md).
 - `src/tsla_market_impact/` contains the LOBSTER reconstruction, impact study,
-  chronological queue/OFI ablation, and marketable-markout analysis.
+  chronological queue/OFI ablation, and marketable-markout and price-spell
+  landmark analyses.
 - `results/` contains aggregate tables, including the 252-row coverage audit
-  and annual level-2 replay, benchmark, queue-model, order-flow, and markout
-  results. Licensed rows are not included.
+  and annual level-2 replay, benchmark, queue-model, order-flow, markout, and
+  landmark results. Licensed rows are not included.
 - `report/` contains the LaTeX source, figures, references, and compiled PDF.
 - `tests/` checks source integrity, data alignment, event-time windows,
   chronological splits, complete-date bootstrap, queue and markout evaluation,
-  and scaling fits, plus a complete CLI run on a hand-written redistributable
-  session.
+  one-signal-per-spell deadlines, and scaling fits, plus a complete CLI run on
+  a hand-written redistributable session.
 
 ## Data
 
@@ -245,7 +272,10 @@ Regenerate the annual C++ benchmark after the tests pass:
   --order-flow-bins data/processed/order-flow-bins-31.csv \
   --order-flow-grid 31 \
   --markout-bins data/processed/marketable-markout-bins-31.csv \
-  --markout-latencies-us 0,10,100,1000,10000
+  --markout-latencies-us 0,10,100,1000,10000 \
+  --landmark-bins data/processed/price-spell-landmark-bins-31.csv \
+  --landmark-age-us 100 \
+  --landmark-latencies-us 0,10,100,1000,10000
 ```
 
 The command audits every delivered pair, refuses any undeclared coverage
@@ -294,6 +324,18 @@ tsla-impact analyze-markouts \
 
 The daily markout grid remains local. The committed 300-row metric table, model
 metadata, and vector figure contain aggregate evidence only.
+
+Apply the same fixed split and train-defined confidence rules to one
+100-microsecond landmark per eligible price spell:
+
+```bash
+tsla-impact analyze-landmarks \
+  --bins data/processed/price-spell-landmark-bins-31.csv
+```
+
+The licensed-data-derived landmark grid remains local. The committed 300-row
+metric table, model metadata, and vector figure contain aggregate evidence
+only.
 
 ## Origin and credit
 

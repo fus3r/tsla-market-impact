@@ -417,6 +417,7 @@ void test_replay_aggregation() {
   CHECK(metrics.mismatches == 1);
   CHECK(metrics.unsupported == 1);
   CHECK(metrics.invalid_snapshots == 1);
+  CHECK(metrics.mid_price_changes == 1);
   CHECK(metrics.events_by_type[1] == 2);
   CHECK(metrics.events_by_type[2] == 1);
   CHECK(metrics.events_by_type[4] == 1);
@@ -447,6 +448,7 @@ void test_replay_aggregation() {
       "    \"mismatches\": 1,\n"
       "    \"unsupported\": 1,\n"
       "    \"invalid_snapshots\": 1,\n"
+      "    \"mid_price_changes\": 1,\n"
       "    \"events_by_type\": {\n"
       "      \"1\": 2,\n"
       "      \"2\": 1,\n"
@@ -489,6 +491,9 @@ void test_replay_aggregation() {
       std::string::npos);
   CHECK(
       benchmark.find("\"thread_count\": 1") !=
+      std::string::npos);
+  CHECK(
+      benchmark.find("\"mid_price_changes\": 1") !=
       std::string::npos);
   CHECK(
       benchmark.find("\"seconds\": [2, 1, 3]") !=

@@ -89,6 +89,27 @@ time without identifying feed, computation, transmission, or exchange
 processing. Overlapping states remain separate diagnostics rather than additive
 returns.
 
+## Price-spell landmarks
+
+The landmark exporter removes the within-spell overlap above. For each
+constant-mid-price spell, it observes the last book state strictly before a
+fixed clock-time landmark after the spell begins. A spell that ends at or
+before the landmark produces no signal. Queue imbalance and cumulative OFI use
+only events before that time, including the same reset and bounded transform as
+the joint signal exporter.
+
+The annual protocol fixes the landmark at 100 microseconds. Each eligible spell
+contributes one signal, followed by separate entry latencies of 0, 10, 100,
+1,000, and 10,000 microseconds. An entry deadline at or after the next mid-price
+change is stale. Events stamped exactly at the observation or entry deadline
+are excluded, preserving file order without looking past the deadline.
+
+Price spells are sequential, so their markout intervals do not overlap. The
+calculation is still not a backtest: entry assumes one unit at the displayed
+best, while the terminal midpoint is a mark rather than an executable exit.
+Fees, impact, fill uncertainty, inventory, capital, and risk limits remain
+outside the model.
+
 ## Annual replay and benchmark
 
 The replay command discovers the level-2 pairs named by the shared
@@ -113,7 +134,10 @@ cmake --build build
   --order-flow-bins data/processed/order-flow-bins-31.csv \
   --order-flow-grid 31 \
   --markout-bins data/processed/marketable-markout-bins-31.csv \
-  --markout-latencies-us 0,10,100,1000,10000
+  --markout-latencies-us 0,10,100,1000,10000 \
+  --landmark-bins data/processed/price-spell-landmark-bins-31.csv \
+  --landmark-age-us 100 \
+  --landmark-latencies-us 0,10,100,1000,10000
 ```
 
 The committed aggregate covers 38,516,432 events. Excluding the 249 session
@@ -128,8 +152,8 @@ The benchmark reports two distinct costs:
 - `in_memory_replay` scans the included resident records, audits transitions,
   validates snapshots, and maintains a checksum.
 
-The queue, order-flow, and markout exports are separate passes after the
-measured replay and are not included in either timing.
+The queue, order-flow, markout, and landmark exports are separate passes after
+the measured replay and are not included in either timing.
 
 The committed Release benchmark used one thread on an Apple M4 Pro. Its
 38,516,432 included events occupy 2,465,051,648 bytes as resident event

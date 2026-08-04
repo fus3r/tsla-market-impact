@@ -479,6 +479,7 @@ def plot_order_flow_signal_ablation(
 def plot_marketable_markouts(
     metrics: pd.DataFrame,
     path: Path | str,
+    sample: str = "best_quote_updates",
 ) -> Path:
     """Plot gross and spread-adjusted next-move markouts by latency."""
 
@@ -497,7 +498,7 @@ def plot_marketable_markouts(
         zip(axes, panels, strict=True)
     ):
         part = metrics.loc[
-            metrics["sample"].eq("best_quote_updates")
+            metrics["sample"].eq(sample)
             & metrics["spread_bucket"].eq(bucket)
             & metrics["model"].eq("queue_and_ofi")
             & metrics["target_train_signal_fraction"].eq(0.10)

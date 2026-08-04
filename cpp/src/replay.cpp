@@ -548,6 +548,9 @@ ReplayMetrics replay_dataset(const Dataset& dataset) {
       }
 
       if (previous != nullptr) {
+        if (midpoint_twice(*previous) != midpoint_twice(record.book)) {
+          ++metrics.mid_price_changes;
+        }
         switch (audit_transition(
             *previous,
             record.message,
@@ -979,6 +982,217 @@ void write_marketable_markout_bins(
   }
 }
 
+void write_price_spell_landmark_bins(
+    const Dataset& dataset,
+    const std::filesystem::path& output,
+    std::uint64_t landmark_age_us,
+    const std::vector<std::uint64_t>& latencies_us,
+    std::size_t bins) {
+  if (bins < 3) {
+    throw std::invalid_argument(
+        "landmark grid size must be at least 3");
+  }
+  if (latencies_us.empty()) {
+    throw std::invalid_argument(
+        "at least one landmark latency is required");
+  }
+  if (landmark_age_us == 0) {
+    throw std::invalid_argument(
+        "landmark age must be positive");
+  }
+  if (std::set<std::uint64_t>(
+          latencies_us.begin(),
+          latencies_us.end()).size() != latencies_us.size()) {
+    throw std::invalid_argument(
+        "landmark latencies must be unique");
+  }
+  constexpr std::uint64_t max_microseconds =
+      std::numeric_limits<std::uint64_t>::max() / 1'000ULL;
+  if (
+      landmark_age_us > max_microseconds ||
+      std::any_of(
+          latencies_us.begin(),
+          latencies_us.end(),
+          [](std::uint64_t latency_us) {
+            return latency_us > max_microseconds;
+          })) {
+    throw std::invalid_argument(
+        "landmark age and latencies must fit in nanoseconds");
+  }
+
+  std::ofstream stream(output);
+  if (!stream) {
+    throw std::runtime_error(
+        "cannot write price-spell landmark bins: " +
+        output.string());
+  }
+  stream
+      << "date,sample,spread_bucket,landmark_age_us,latency_us,"
+         "queue_bin,ofi_bin,queue_center,ofi_center,signals,"
+         "executable,stale,up_moves,down_moves,midpoint_move_sum_bps,"
+         "half_spread_sum_bps\n";
+  stream << std::setprecision(12);
+
+  const std::uint64_t landmark_age_ns =
+      landmark_age_us * 1'000ULL;
+  for (const SessionData& session : dataset.sessions) {
+    std::vector<
+        std::array<
+            std::vector<MarkoutCount>,
+            spread_bucket_names.size()>>
+        latency_counts(latencies_us.size());
+    for (auto& counts : latency_counts) {
+      for (std::vector<MarkoutCount>& bucket_counts : counts) {
+        bucket_counts.resize(bins * bins);
+      }
+    }
+
+    std::size_t run_start = 0;
+    while (run_start < session.events.size()) {
+      const std::int64_t current_mid =
+          midpoint_twice(session.events[run_start].book);
+      std::size_t next_run = run_start + 1;
+      while (
+          next_run < session.events.size() &&
+          midpoint_twice(session.events[next_run].book) == current_mid) {
+        ++next_run;
+      }
+      if (next_run == session.events.size()) {
+        break;
+      }
+
+      const std::uint64_t run_start_time =
+          session.events[run_start].message.timestamp_ns;
+      if (
+          landmark_age_ns >
+          std::numeric_limits<std::uint64_t>::max() - run_start_time) {
+        throw std::overflow_error(
+            "price-spell landmark exceeds uint64 range");
+      }
+      const std::uint64_t landmark_time =
+          run_start_time + landmark_age_ns;
+      const std::uint64_t next_move_time =
+          session.events[next_run].message.timestamp_ns;
+      if (landmark_time >= next_move_time) {
+        run_start = next_run;
+        continue;
+      }
+
+      std::size_t landmark = run_start;
+      while (
+          landmark + 1 < next_run &&
+          session.events[landmark + 1].message.timestamp_ns <
+              landmark_time) {
+        ++landmark;
+      }
+      std::int64_t cumulative_ofi = 0;
+      for (std::size_t index = run_start + 1;
+           index <= landmark;
+           ++index) {
+        cumulative_ofi += top_of_book_ofi(
+            session.events[index - 1].book,
+            session.events[index].book);
+      }
+
+      const BookSnapshot& signal = session.events[landmark].book;
+      const std::size_t queue = signal_bin(
+          level_one_queue_imbalance(signal),
+          bins);
+      const std::size_t ofi = signal_bin(
+          bounded_order_flow_pressure(cumulative_ofi, signal),
+          bins);
+      const std::size_t cell = queue * bins + ofi;
+      const std::size_t bucket = spread_bucket(signal);
+      const std::int64_t future_mid =
+          midpoint_twice(session.events[next_run].book);
+      const int direction = future_mid > current_mid ? 1 : -1;
+
+      for (std::size_t latency = 0;
+           latency < latencies_us.size();
+           ++latency) {
+        const std::uint64_t latency_ns =
+            latencies_us[latency] * 1'000ULL;
+        if (
+            latency_ns >
+            std::numeric_limits<std::uint64_t>::max() - landmark_time) {
+          throw std::overflow_error(
+              "landmark entry deadline exceeds uint64 range");
+        }
+        const std::uint64_t entry_time =
+            landmark_time + latency_ns;
+
+        auto accumulate = [&](std::size_t spread_index) {
+          MarkoutCount& count =
+              latency_counts[latency][spread_index][cell];
+          ++count.signals;
+          if (direction > 0) {
+            ++count.up_moves;
+          } else {
+            ++count.down_moves;
+          }
+          if (entry_time >= next_move_time) {
+            return;
+          }
+
+          std::size_t execution = landmark;
+          while (
+              execution + 1 < next_run &&
+              session.events[execution + 1].message.timestamp_ns <
+                  entry_time) {
+            ++execution;
+          }
+          const BookSnapshot& entry = session.events[execution].book;
+          const std::int64_t entry_mid = midpoint_twice(entry);
+          const std::int64_t spread =
+              static_cast<std::int64_t>(entry.asks[0].price) -
+              entry.bids[0].price;
+          ++count.executable;
+          count.midpoint_move_sum_bps +=
+              static_cast<long double>(future_mid - entry_mid) *
+              10'000.0L / static_cast<long double>(entry_mid);
+          count.half_spread_sum_bps +=
+              static_cast<long double>(spread) * 10'000.0L /
+              static_cast<long double>(entry_mid);
+        };
+        accumulate(0);
+        accumulate(bucket);
+      }
+      run_start = next_run;
+    }
+
+    for (std::size_t latency = 0;
+         latency < latencies_us.size();
+         ++latency) {
+      for (std::size_t bucket_index = 0;
+           bucket_index < spread_bucket_names.size();
+           ++bucket_index) {
+        for (std::size_t queue = 0; queue < bins; ++queue) {
+          for (std::size_t ofi = 0; ofi < bins; ++ofi) {
+            const MarkoutCount& count =
+                latency_counts[latency][bucket_index][
+                    queue * bins + ofi];
+            if (count.signals == 0) {
+              continue;
+            }
+            stream
+                << session.date << ",price_spell_landmarks,"
+                << spread_bucket_names[bucket_index] << ','
+                << landmark_age_us << ',' << latencies_us[latency]
+                << ',' << queue << ',' << ofi << ','
+                << bin_center(queue, bins) << ','
+                << bin_center(ofi, bins) << ',' << count.signals
+                << ',' << count.executable << ','
+                << count.signals - count.executable << ','
+                << count.up_moves << ',' << count.down_moves << ','
+                << count.midpoint_move_sum_bps << ','
+                << count.half_spread_sum_bps << '\n';
+          }
+        }
+      }
+    }
+  }
+}
+
 std::string replay_audit_json(
     const Dataset& dataset,
     const ReplayMetrics& metrics) {
@@ -1011,6 +1225,8 @@ std::string replay_audit_json(
       << "    \"unsupported\": " << metrics.unsupported << ",\n"
       << "    \"invalid_snapshots\": "
       << metrics.invalid_snapshots << ",\n"
+      << "    \"mid_price_changes\": "
+      << metrics.mid_price_changes << ",\n"
       << "    \"events_by_type\": {\n";
   for (std::size_t event_type = 1;
        event_type < metrics.events_by_type.size();
@@ -1127,6 +1343,8 @@ std::string benchmark_json(
       << "    \"unsupported\": " << metrics.unsupported << ",\n"
       << "    \"invalid_snapshots\": "
       << metrics.invalid_snapshots << ",\n"
+      << "    \"mid_price_changes\": "
+      << metrics.mid_price_changes << ",\n"
       << "    \"exact_fraction_of_auditable\": "
       << exact_fraction << ",\n"
       << "    \"depth_censored_fraction_of_auditable\": "

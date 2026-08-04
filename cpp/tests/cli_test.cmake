@@ -70,12 +70,14 @@ set(BENCHMARK_JSON "${OUTPUT_DIR}/benchmark.json")
 set(QUEUE_BINS "${OUTPUT_DIR}/queue-bins.csv")
 set(ORDER_FLOW_BINS "${OUTPUT_DIR}/order-flow-bins.csv")
 set(MARKOUT_BINS "${OUTPUT_DIR}/markout-bins.csv")
+set(LANDMARK_BINS "${OUTPUT_DIR}/landmark-bins.csv")
 file(
   REMOVE
   "${BENCHMARK_JSON}"
   "${QUEUE_BINS}"
   "${ORDER_FLOW_BINS}"
   "${MARKOUT_BINS}"
+  "${LANDMARK_BINS}"
 )
 execute_process(
   COMMAND
@@ -92,6 +94,9 @@ execute_process(
     --order-flow-grid 11
     --markout-bins "${MARKOUT_BINS}"
     --markout-latencies-us 0,1
+    --landmark-bins "${LANDMARK_BINS}"
+    --landmark-age-us 1
+    --landmark-latencies-us 0,1
     --machine "synthetic CTest fixture"
   RESULT_VARIABLE REPLAY_STATUS
   OUTPUT_VARIABLE REPLAY_STDOUT
@@ -115,6 +120,7 @@ string(JSON CENSORED GET "${BENCHMARK}" audit depth_censored_transitions)
 string(JSON MISMATCHES GET "${BENCHMARK}" audit mismatches)
 string(JSON UNSUPPORTED GET "${BENCHMARK}" audit unsupported)
 string(JSON INVALID GET "${BENCHMARK}" audit invalid_snapshots)
+string(JSON MID_CHANGES GET "${BENCHMARK}" audit mid_price_changes)
 string(JSON CHECKSUM GET "${BENCHMARK}" audit checksum)
 
 if(
@@ -157,6 +163,50 @@ if(
   message(
     FATAL_ERROR
     "markout output does not match the synthetic execution path"
+  )
+endif()
+
+file(READ "${LANDMARK_BINS}" LANDMARK_OUTPUT)
+string(
+  FIND
+  "${LANDMARK_OUTPUT}"
+  "date,sample,spread_bucket,landmark_age_us,latency_us,queue_bin,ofi_bin,queue_center,ofi_center,signals,executable,stale,up_moves,down_moves,midpoint_move_sum_bps,half_spread_sum_bps"
+  LANDMARK_HEADER_POSITION
+)
+string(
+  FIND
+  "${LANDMARK_OUTPUT}"
+  "2019-07-03,price_spell_landmarks,all_spreads,1,0,5,5,0,0,1,1,0,0,1,-49.7512437811,149.253731343"
+  LANDMARK_DOWN_POSITION
+)
+string(
+  FIND
+  "${LANDMARK_OUTPUT}"
+  "2019-07-03,price_spell_landmarks,all_spreads,1,0,6,5,0.181818181818,0,2,2,0,1,1,0,200"
+  LANDMARK_MIXED_POSITION
+)
+string(
+  FIND
+  "${LANDMARK_OUTPUT}"
+  "2019-07-03,price_spell_landmarks,all_spreads,1,0,7,5,0.363636363636,0,1,1,0,1,0,50.2512562814,150.753768844"
+  LANDMARK_UP_POSITION
+)
+string(
+  FIND
+  "${LANDMARK_OUTPUT}"
+  "2019-07-03,price_spell_landmarks,all_spreads,1,1,6,5,0.181818181818,0,2,0,2,1,1,0,0"
+  LANDMARK_STALE_POSITION
+)
+if(
+  NOT LANDMARK_HEADER_POSITION EQUAL 0
+  OR LANDMARK_DOWN_POSITION EQUAL -1
+  OR LANDMARK_MIXED_POSITION EQUAL -1
+  OR LANDMARK_UP_POSITION EQUAL -1
+  OR LANDMARK_STALE_POSITION EQUAL -1
+)
+  message(
+    FATAL_ERROR
+    "landmark output does not match the one-signal-per-spell path"
   )
 endif()
 
@@ -208,12 +258,13 @@ if(
   NOT MISMATCHES EQUAL 0
   OR NOT UNSUPPORTED EQUAL 0
   OR NOT INVALID EQUAL 0
+  OR NOT MID_CHANGES EQUAL 4
   OR CHECKSUM EQUAL 0
 )
   message(
     FATAL_ERROR
     "unexpected audit result: ${MISMATCHES} mismatches, ${UNSUPPORTED} unsupported, "
-    "${INVALID} invalid, checksum ${CHECKSUM}"
+    "${INVALID} invalid, ${MID_CHANGES} mid-price changes, checksum ${CHECKSUM}"
   )
 endif()
 

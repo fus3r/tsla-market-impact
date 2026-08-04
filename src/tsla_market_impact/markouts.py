@@ -10,7 +10,11 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 
 from .data import required_columns
-from .next_move import compressed_binary_rows, weighted_binary_scores
+from .next_move import (
+    compressed_binary_rows,
+    day_cluster_brier_comparison,
+    weighted_binary_scores,
+)
 from .orderflow import MODEL_FEATURES
 from .plots import plot_marketable_markouts
 from .policy import (
@@ -36,6 +40,8 @@ MARKOUT_BIN_COLUMNS = [
     "midpoint_move_sum_bps",
     "half_spread_sum_bps",
 ]
+
+LANDMARK_BIN_COLUMNS = [*MARKOUT_BIN_COLUMNS, "landmark_age_us"]
 
 MARKOUT_MODELS = {
     name: features
@@ -211,11 +217,27 @@ def evaluate_marketable_markouts(
             train_probability = model.predict_proba(
                 train_reference[list(feature_columns)].to_numpy(dtype=float)
             )[:, 1]
+            test_probability = model.predict_proba(
+                test_reference[list(feature_columns)].to_numpy(dtype=float)
+            )[:, 1]
             expanded_test_probability = model.predict_proba(x_test)[:, 1]
             direction_scores = weighted_binary_scores(
                 y_test,
                 expanded_test_probability,
                 w_test,
+            )
+            baseline_probability = float(np.average(y_train, weights=w_train))
+            baseline_scores = weighted_binary_scores(
+                y_test,
+                np.full(len(y_test), baseline_probability),
+                w_test,
+            )
+            direction_comparison = day_cluster_brier_comparison(
+                test_reference,
+                test_probability,
+                np.full(len(test_reference), baseline_probability),
+                bootstrap_replicates,
+                random_state,
             )
             train_confidence = np.abs(train_probability - 0.5)
             train_weights = train_reference["signals"].to_numpy(dtype=float)
@@ -272,6 +294,8 @@ def evaluate_marketable_markouts(
                             "train_last_date": str(dates[split - 1]),
                             "test_first_date": str(dates[split]),
                             "test_last_date": str(dates[-1]),
+                            "train_signals": int(w_train.sum()),
+                            "test_signals": int(w_test.sum()),
                             "selected_test_signals": selected_signals,
                             "executable_test_signals": executions,
                             "stale_fraction": 1 - executions / selected_signals,
@@ -280,6 +304,13 @@ def evaluate_marketable_markouts(
                             "direction_accuracy": direction_scores["accuracy"],
                             "direction_log_loss": direction_scores["log_loss"],
                             "direction_brier_score": direction_scores["brier_score"],
+                            "direction_baseline_brier_score": baseline_scores[
+                                "brier_score"
+                            ],
+                            **{
+                                f"direction_{key}": value
+                                for key, value in direction_comparison.items()
+                            },
                             "intercept": float(model.intercept_[0]),
                             "queue_coefficient": (
                                 float(
@@ -356,6 +387,53 @@ def evaluate_marketable_markouts(
     return metrics, result
 
 
+def evaluate_price_spell_landmarks(
+    bins: pd.DataFrame,
+    test_start_date: str,
+    train_signal_fractions: tuple[float, ...] = DEFAULT_TRAIN_SIGNAL_FRACTIONS,
+    bootstrap_replicates: int = 10_000,
+    random_state: int = 42,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    """Evaluate one pre-specified clock-time signal per eligible price spell."""
+
+    required_columns(bins, LANDMARK_BIN_COLUMNS)
+    ages = bins["landmark_age_us"].drop_duplicates().to_numpy(dtype=np.int64)
+    if len(ages) != 1 or ages[0] <= 0:
+        raise ValueError("landmark bins must contain one positive landmark age")
+    if set(bins["sample"]) != {"price_spell_landmarks"}:
+        raise ValueError("landmark bins must use the price_spell_landmarks sample")
+
+    metrics, result = evaluate_marketable_markouts(
+        bins,
+        test_start_date=test_start_date,
+        train_signal_fractions=train_signal_fractions,
+        bootstrap_replicates=bootstrap_replicates,
+        random_state=random_state,
+    )
+    protocol = result["protocol"]
+    protocol["landmark_age_us"] = int(ages[0])
+    protocol["observation"] = (
+        "one prevailing book state at the fixed clock-time landmark after each "
+        "constant-mid-price spell begins; spells ending at or before the landmark "
+        "do not produce a signal"
+    )
+    protocol["execution"] = (
+        "one-unit marketable order at the displayed best quote prevailing after "
+        "the stated post-landmark latency, provided the next mid-price change has "
+        "not already occurred"
+    )
+    protocol["nonoverlap"] = (
+        "each eligible constant-mid-price spell contributes at most one signal, "
+        "and price spells are sequential within a session"
+    )
+    protocol["interpretation_warning"] = (
+        "the terminal midpoint is a mark rather than an executable exit; fees, "
+        "impact, fill uncertainty, inventory, capital, and risk limits are excluded"
+    )
+    protocol.pop("overlap_warning")
+    return metrics, result
+
+
 def run_marketable_markout_analysis(
     bins_path: Path | str,
     results_dir: Path | str,
@@ -380,5 +458,34 @@ def run_marketable_markout_analysis(
         plot_marketable_markouts(
             metrics,
             Path(figures_dir) / "marketable-markouts.pdf",
+        )
+    return json.loads(serialized)
+
+
+def run_price_spell_landmark_analysis(
+    bins_path: Path | str,
+    results_dir: Path | str,
+    figures_dir: Path | str | None = None,
+    *,
+    analysis_policy: AnalysisPolicy,
+) -> dict[str, object]:
+    """Evaluate non-overlapping price-spell landmarks and persist aggregates."""
+
+    bins = pd.read_csv(bins_path)
+    validate_analysis_universe(bins["date"], analysis_policy)
+    metrics, result = evaluate_price_spell_landmarks(
+        bins,
+        test_start_date=analysis_policy.test_start,
+    )
+    output = Path(results_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    metrics.to_csv(output / "price_spell_landmark_metrics.csv", index=False)
+    serialized = json.dumps(result, indent=2)
+    (output / "price_spell_landmark_model.json").write_text(serialized + "\n")
+    if figures_dir is not None:
+        plot_marketable_markouts(
+            metrics,
+            Path(figures_dir) / "price-spell-landmarks.pdf",
+            sample="price_spell_landmarks",
         )
     return json.loads(serialized)

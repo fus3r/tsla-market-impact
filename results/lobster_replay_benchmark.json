@@ -29,6 +29,7 @@
     "mismatches": 0,
     "unsupported": 0,
     "invalid_snapshots": 0,
+    "mid_price_changes": 15263228,
     "exact_fraction_of_auditable": 0.741112067102,
     "depth_censored_fraction_of_auditable": 0.258887932898,
     "checksum": 10694961792054746546,

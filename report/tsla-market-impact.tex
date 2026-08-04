@@ -18,8 +18,8 @@
 \hypersetup{
   pdftitle={Signed order count, order-book signals, markouts, and depth-aware replay: TSLA, 2019},
   pdfauthor={Riad Darwish},
-  pdfsubject={Conditional impact, next-price prediction, marketable markouts, and finite-depth replay},
-  pdfkeywords={market impact, marketable markout, queue imbalance, order flow imbalance, market microstructure, LOBSTER, C++, TSLA}
+  pdfsubject={Conditional impact, next-price prediction, marketable markouts, price-spell landmarks, and finite-depth replay},
+  pdfkeywords={market impact, marketable markout, price-spell landmark, queue imbalance, order flow imbalance, market microstructure, LOBSTER, C++, TSLA}
 }
 
 \input{results.tex}
@@ -53,7 +53,7 @@
   \vspace{6mm}
   {\large Riad Darwish\par}
   {\normalsize CentraleSup\'elec\par}
-  {\normalsize 3 August 2026\par}
+  {\normalsize 4 August 2026\par}
 \end{center}
 
 \vspace{3mm}
@@ -97,13 +97,16 @@ mid-price change from current queue imbalance and causal top-of-book OFI. The
 combined model reaches ROC-AUC \CombinedAllAuc{} and reduces Brier score by
 \CombinedAllBrierReduction{} across all spreads. In the exploratory one-tick
 subset, the corresponding values are \CombinedOneTickAuc{} and
-\CombinedOneTickBrierReduction{}. A marketable-markout gate subtracts the
-displayed half-spread and delays entry. The top 10 percent of
-training-confidence one-tick states have a net markout of
-\MarkoutOneTickZeroNet{} basis points immediately and
-\MarkoutOneTickTenNet{} at 10 microseconds, but the 100-microsecond interval
-crosses zero. Across all spreads, even zero-latency markout is
-\MarkoutAllZeroNet{} basis points.
+\CombinedOneTickBrierReduction{}. A state-level marketable-markout gate
+subtracts the displayed half-spread and delays entry. At one tick, its top
+10-percent training-confidence tail has a net markout of
+\MarkoutOneTickZeroNet{} basis points immediately and \MarkoutOneTickTenNet{}
+at 10 microseconds, but the 100-microsecond interval crosses zero; the
+corresponding all-spread immediate markout is \MarkoutAllZeroNet{}. A fixed
+100-microsecond landmark then permits at most one signal per price spell. Its
+one-tick net markout falls from \LandmarkOneTickZeroNet{} immediately to
+\LandmarkOneTickTenNet{} after 10 microseconds and
+\LandmarkOneTickHundredNet{} after 100 microseconds.
 
 I also apply the finite-size scaling construction of \citet{patzelt2018} to the
 same stock-year. The width and height scale regressions have in-sample \Rtwo{}
@@ -126,9 +129,9 @@ the study does not claim complete 2019 coverage or external replication.
 \end{center}
 
 \vspace{0.5em}
-\textbf{Keywords:} market impact, marketable markout, queue imbalance,
-order-flow imbalance, market microstructure, chronological validation,
-order-book replay, finite-size scaling
+\textbf{Keywords:} market impact, marketable markout, price-spell landmark,
+queue imbalance, order-flow imbalance, market microstructure, chronological
+validation, order-book replay, finite-size scaling
 
 \section{Question}
 
@@ -776,6 +779,95 @@ transmission, or exchange processing. The one-tick stratum, confidence tails,
 and latency comparisons are multiple exploratory views without a family-wise
 correction.
 
+\subsection{One clock-time landmark per price spell}
+
+The preceding gate deliberately evaluates every qualifying best-quote update.
+I test the sensitivity to repeated labels with a second protocol that
+pre-specifies one observation time per constant-mid-price spell. If $t_r$ is
+the event that establishes spell $r$, the landmark is
+$\ell_r=t_r+100$ microseconds. A spell ending at or before $\ell_r$ produces no
+signal. Otherwise, queue imbalance, cumulative OFI, and the spread use the last
+book state strictly before $\ell_r$. Events stamped exactly at the deadline
+remain unobserved, so same-timestamp ordering cannot leak into the signal.
+Entry latency is then applied after $\ell_r$.
+
+Each eligible spell contributes at most one decision, and successive spells
+cannot overlap before their terminal price changes. Of
+\LandmarkCompletedSpells{} completed spells in the included-session replay,
+\LandmarkEligibleSpells{} (\LandmarkEligibleFraction{}) survive to the fixed
+landmark. The first 198 dates again fit the linear queue, OFI, and combined
+models; the final 51 dates remain untouched. Table~\ref{tab:landmark-direction}
+separates direction quality from the later cost calculation.
+
+\begin{table}[H]
+  \centering
+  \caption{Combined-model direction scores at the 100-microsecond price-spell
+  landmark. Brier reductions compare with the training-frequency intercept;
+  intervals resample complete test dates.}
+  \label{tab:landmark-direction}
+  \small
+  \begin{tabular}{lrrr}
+    \toprule
+    Spread & Test landmarks & ROC-AUC & Brier reduction [95\% interval] \\
+    \midrule
+    All & \LandmarkAllTest{} & \LandmarkAllAuc{} &
+      \LandmarkAllBrierReduction{} [\LandmarkAllBrierLower{}, \LandmarkAllBrierUpper{}] \\
+    One tick & \LandmarkOneTickTest{} & \LandmarkOneTickAuc{} &
+      \LandmarkOneTickBrierReduction{} [\LandmarkOneTickBrierLower{}, \LandmarkOneTickBrierUpper{}] \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The fixed grid creates probability ties. The cutoff targeting 10 percent of
+training signals therefore retains \LandmarkAllCoverage{} across all spreads
+and \LandmarkOneTickCoverage{} in the one-tick stratum; no tie is broken using
+test outcomes. The pooled markout remains decisively negative. In the
+exploratory one-tick stratum, the immediate interval is positive but is much
+smaller than in the repeated-state diagnostic. It remains just above zero
+after 10 microseconds and is negative after 100 microseconds.
+
+\begin{table}[H]
+  \centering
+  \caption{Combined-model markouts from the non-overlapping 100-microsecond
+  landmarks on the final 51 dates. The rule targets 10 percent train coverage;
+  intervals use 10,000 complete-date bootstrap resamples.}
+  \label{tab:landmark-markouts}
+  \small
+  \begin{tabular}{lrrrr}
+    \toprule
+    Spread & Entry latency & Executable & Stale & Net bp [95\% interval] \\
+    \midrule
+    All & 0 us & \LandmarkAllSignals{} & 0.0\% &
+      \LandmarkAllZeroNet{} [\LandmarkAllZeroLower{}, \LandmarkAllZeroUpper{}] \\
+    One tick & 0 us & \LandmarkOneTickSignals{} & 0.0\% &
+      \LandmarkOneTickZeroNet{} [\LandmarkOneTickZeroLower{}, \LandmarkOneTickZeroUpper{}] \\
+    One tick & 10 us & \LandmarkOneTickTenExecutable{} &
+      \LandmarkOneTickTenStale{} &
+      \LandmarkOneTickTenNet{} [\LandmarkOneTickTenLower{}, \LandmarkOneTickTenUpper{}] \\
+    One tick & 100 us & \LandmarkOneTickHundredExecutable{} &
+      \LandmarkOneTickHundredStale{} &
+      \LandmarkOneTickHundredNet{} [\LandmarkOneTickHundredLower{}, \LandmarkOneTickHundredUpper{}] \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/price-spell-landmarks.pdf}
+  \caption{Gross and half-spread-adjusted markouts after the fixed
+  100-microsecond observation landmark. Each eligible price spell contributes
+  at most one signal. Orange bars are complete-date 95 percent intervals.}
+  \label{fig:landmarks}
+\end{figure}
+
+Removing within-spell repetition changes both the sample and the fitted
+confidence cutoff, so the two markout gates are not paired estimators. The
+attenuation nevertheless shows that the positive one-tick tail is sensitive to
+the decision clock. Non-overlap also does not turn the calculation into a
+backtest: the terminal midpoint is a mark rather than an executable exit, and
+fees, impact, fill uncertainty, inventory, capital, and risk limits remain
+absent.
+
 \section{Scaling analysis}
 \label{sec:scaling}
 
@@ -869,14 +961,17 @@ this included TSLA sample in-sample; the cross-asset claim in
   \item Timestamp and side grouping cannot recover investor identity or
   institutional metaorders. The book covers NASDAQ rather than consolidated US
   liquidity, and hidden-execution signs are uncertain around the midpoint.
-  \item Several order-book states can share the same eventual mid-price-change
-  label. The scores do not represent independent event trials; uncertainty is
-  resampled at the trading-date level. OFI also depends on the waiting horizon
-  to that next move, so another horizon defines a different feature.
-  \item The marketable-markout gate assumes a one-unit fill at the displayed
-  best quote. It omits fees, impact, queueing, inventory, capital, and risk
-  limits. The stated latency is one exogenous delay applied to LOBSTER event
-  time; it does not identify components of an implementable system.
+  \item Several states in the main next-move experiment can share one eventual
+  label. The 100-microsecond landmark removes that repetition for a separate
+  protocol, but filters short spells and changes the target population.
+  Uncertainty is resampled at the trading-date level. OFI also depends on the
+  waiting horizon to that next move, so another horizon defines a different
+  feature.
+  \item Both marketable-markout gates assume a one-unit fill at the displayed
+  best quote. The terminal midpoint is not an executable exit, and fees,
+  impact, fill uncertainty, inventory, capital, and risk limits are absent.
+  The stated latency is one exogenous delay applied to LOBSTER event time; it
+  does not identify components of an implementable system.
   \item Markout confidence, latency, spread, and model comparisons are
   exploratory and receive no family-wise multiple-testing correction. The
   complete-date bootstrap addresses within-day dependence but not protocol
@@ -909,12 +1004,13 @@ tables from the included sessions, builds event-time windows, fits the models,
 and writes the remaining aggregate files under \texttt{results/}. The C++20
 library loads the same policy, rejects undeclared incomplete sessions, audits
 finite-depth transitions, and exports daily queue, joint queue/OFI, and
-marketable-markout bins. The figures are vector PDFs. Synthetic tests cover
-file pairing, source coverage, half-day filtering, book alignment, day
-boundaries, fixed chronological splits, complete-date resampling, queue/OFI
-ablation, markout accounting, grid robustness, and the scaling regressions.
-Reproducing the annual transaction tables, replay, and aggregate grids requires
-licensed LOBSTER files, which are not tracked.
+state-level markout and price-spell landmark bins. The figures are vector PDFs.
+Synthetic tests cover file pairing, source coverage, half-day filtering, book
+alignment, day boundaries, fixed chronological splits, complete-date
+resampling, queue/OFI ablation, markout accounting, non-overlapping price-spell
+landmarks, grid robustness, and the scaling regressions. Reproducing the annual
+transaction tables, replay, and aggregate grids requires licensed LOBSTER
+files, which are not tracked.
 
 The course presentation lists L. Cohen, R. Darwish, A. Pariente, H. Rohrbach,
 and R. Sithisak. Anastasia Bugaenko supervised the work. I wrote this standalone
@@ -949,6 +1045,16 @@ but its 100-microsecond interval crosses zero and \MarkoutOneTickHundredStale{}
 of candidate states are stale. The 5-percent tail survives 100 microseconds on
 only \MarkoutTailHundredExecutable{} executable test states, then loses a
 detectable advantage by 1 millisecond.
+
+At the fixed 100-microsecond landmark, each eligible price spell contributes at
+most one signal. The combined one-tick model reaches ROC-AUC
+\LandmarkOneTickAuc{} and a \LandmarkOneTickBrierReduction{} Brier reduction,
+but its 10-percent-target net markout falls to
+\LandmarkOneTickZeroNet{} basis points immediately,
+\LandmarkOneTickTenNet{} after 10 microseconds, and
+\LandmarkOneTickHundredNet{} after 100 microseconds. The pooled result remains
+strongly negative. Removing repeated terminal labels therefore narrows the
+exploratory positive tail rather than validating a strategy.
 
 The included TSLA sessions also fit the scaling form proposed by
 \citet{patzelt2018}. This is a within-sample application to one stock-year, not

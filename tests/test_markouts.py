@@ -2,7 +2,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from tsla_market_impact.markouts import evaluate_marketable_markouts
+from tsla_market_impact.markouts import (
+    evaluate_marketable_markouts,
+    evaluate_price_spell_landmarks,
+)
 
 
 def _markout_bins() -> pd.DataFrame:
@@ -76,6 +79,34 @@ def test_markouts_reject_inconsistent_counts() -> None:
         match="signals must equal executable plus stale",
     ):
         evaluate_marketable_markouts(
+            bins,
+            test_start_date="2019-01-07",
+        )
+
+
+def test_price_spell_landmarks_use_one_pre_specified_clock_time() -> None:
+    bins = _markout_bins()
+    bins["sample"] = "price_spell_landmarks"
+    bins["landmark_age_us"] = 100
+
+    metrics, result = evaluate_price_spell_landmarks(
+        bins,
+        test_start_date="2019-01-07",
+        train_signal_fractions=(1.0,),
+        bootstrap_replicates=200,
+        random_state=7,
+    )
+
+    assert set(metrics["sample"]) == {"price_spell_landmarks"}
+    assert metrics["direction_relative_brier_reduction"].min() > 0
+    assert result["protocol"]["landmark_age_us"] == 100
+    assert "at most one signal" in result["protocol"]["nonoverlap"]
+    assert "executable exit" in result["protocol"]["interpretation_warning"]
+    assert "overlap_warning" not in result["protocol"]
+
+    bins.loc[0, "landmark_age_us"] = 200
+    with pytest.raises(ValueError, match="one positive landmark age"):
+        evaluate_price_spell_landmarks(
             bins,
             test_start_date="2019-01-07",
         )

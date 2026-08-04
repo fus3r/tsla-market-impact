@@ -69,6 +69,7 @@ endforeach()
 set(BENCHMARK_JSON "${OUTPUT_DIR}/benchmark.json")
 set(QUEUE_BINS "${OUTPUT_DIR}/queue-bins.csv")
 set(ORDER_FLOW_BINS "${OUTPUT_DIR}/order-flow-bins.csv")
+set(OFI_HORIZON_BINS "${OUTPUT_DIR}/ofi-horizon-bins.csv")
 set(MARKOUT_BINS "${OUTPUT_DIR}/markout-bins.csv")
 set(LANDMARK_BINS "${OUTPUT_DIR}/landmark-bins.csv")
 file(
@@ -76,6 +77,7 @@ file(
   "${BENCHMARK_JSON}"
   "${QUEUE_BINS}"
   "${ORDER_FLOW_BINS}"
+  "${OFI_HORIZON_BINS}"
   "${MARKOUT_BINS}"
   "${LANDMARK_BINS}"
 )
@@ -92,6 +94,9 @@ execute_process(
     --imbalance-bins 11
     --order-flow-bins "${ORDER_FLOW_BINS}"
     --order-flow-grid 11
+    --ofi-horizon-bins "${OFI_HORIZON_BINS}"
+    --ofi-quote-windows 1,2
+    --ofi-clock-windows-us 1,2
     --markout-bins "${MARKOUT_BINS}"
     --markout-latencies-us 0,1
     --landmark-bins "${LANDMARK_BINS}"
@@ -246,6 +251,43 @@ if(
   message(
     FATAL_ERROR
     "order-flow output does not match the synthetic reset path"
+  )
+endif()
+
+file(READ "${OFI_HORIZON_BINS}" OFI_HORIZON_OUTPUT)
+string(
+  FIND
+  "${OFI_HORIZON_OUTPUT}"
+  "date,sample,spread_bucket,horizon_kind,horizon_value,queue_bin,ofi_bin,queue_center,ofi_center,observations,up_moves,down_moves"
+  OFI_HORIZON_HEADER_POSITION
+)
+string(
+  FIND
+  "${OFI_HORIZON_OUTPUT}"
+  "2019-07-03,best_quote_updates,all_spreads,price_spell,0,6,5,0.1818181818,0,2,1,1"
+  OFI_RESET_POSITION
+)
+string(
+  FIND
+  "${OFI_HORIZON_OUTPUT}"
+  "2019-07-03,best_quote_updates,all_spreads,quote_updates,1,6,4,0.1818181818,-0.1818181818,1,0,1"
+  OFI_ONE_UPDATE_POSITION
+)
+string(
+  FIND
+  "${OFI_HORIZON_OUTPUT}"
+  "2019-07-03,best_quote_updates,all_spreads,clock_us,2,7,3,0.3636363636,-0.3636363636,1,1,0"
+  OFI_STRICT_CLOCK_POSITION
+)
+if(
+  NOT OFI_HORIZON_HEADER_POSITION EQUAL 0
+  OR OFI_RESET_POSITION EQUAL -1
+  OR OFI_ONE_UPDATE_POSITION EQUAL -1
+  OR OFI_STRICT_CLOCK_POSITION EQUAL -1
+)
+  message(
+    FATAL_ERROR
+    "OFI horizon output does not match the causal window path"
   )
 endif()
 if(NOT SEEDED EQUAL 1 OR NOT EXACT EQUAL 4 OR NOT CENSORED EQUAL 2)

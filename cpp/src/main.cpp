@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -23,6 +24,7 @@ struct Options {
   std::filesystem::path json_output;
   std::filesystem::path queue_bins_output;
   std::filesystem::path order_flow_bins_output;
+  std::filesystem::path ofi_horizon_bins_output;
   std::filesystem::path markout_bins_output;
   std::filesystem::path landmark_bins_output;
   int decode_runs{1};
@@ -30,6 +32,9 @@ struct Options {
   int warmup_runs{1};
   std::size_t imbalance_bins{101};
   std::size_t order_flow_grid{31};
+  std::vector<std::uint64_t> ofi_quote_windows{1, 5, 20, 100};
+  std::vector<std::uint64_t> ofi_clock_windows_us{
+      10, 100, 1'000, 10'000};
   std::vector<std::uint64_t> markout_latencies_us{
       0, 10, 100, 1'000, 10'000};
   std::uint64_t landmark_age_us{100};
@@ -52,6 +57,10 @@ void print_usage(std::ostream& output) {
       << "  --imbalance-bins N       Queue bins across [-1, 1] (default: 101)\n"
       << "  --order-flow-bins PATH   Write daily joint queue/OFI aggregates\n"
       << "  --order-flow-grid N      Bins per queue/OFI axis (default: 31)\n"
+      << "  --ofi-horizon-bins PATH  Write daily fixed-horizon OFI aggregates\n"
+      << "  --ofi-quote-windows L    Quote-update lookbacks (default: 1,5,20,100)\n"
+      << "  --ofi-clock-windows-us L Clock-time lookbacks in microseconds "
+         "(default: 10,100,1000,10000)\n"
       << "  --markout-bins PATH      Write daily marketable markout aggregates\n"
       << "  --markout-latencies-us L Comma-separated decision latencies "
          "(default: 0,10,100,1000,10000)\n"
@@ -117,6 +126,19 @@ std::vector<std::uint64_t> nonnegative_integer_list(
   return parsed;
 }
 
+std::vector<std::uint64_t> positive_integer_list(
+    const std::string& value,
+    const std::string& name) {
+  std::vector<std::uint64_t> parsed =
+      nonnegative_integer_list(value, name);
+  if (std::ranges::any_of(
+          parsed,
+          [](std::uint64_t item) { return item == 0; })) {
+    throw std::invalid_argument("invalid " + name + ": " + value);
+  }
+  return parsed;
+}
+
 Options parse_options(int argc, char** argv) {
   Options options;
   for (int index = 1; index < argc; ++index) {
@@ -155,6 +177,17 @@ Options parse_options(int argc, char** argv) {
           positive_integer(
               require_value(argc, argv, index),
               "order-flow grid"));
+    } else if (argument == "--ofi-horizon-bins") {
+      options.ofi_horizon_bins_output =
+          require_value(argc, argv, index);
+    } else if (argument == "--ofi-quote-windows") {
+      options.ofi_quote_windows = positive_integer_list(
+          require_value(argc, argv, index),
+          "OFI quote windows");
+    } else if (argument == "--ofi-clock-windows-us") {
+      options.ofi_clock_windows_us = positive_integer_list(
+          require_value(argc, argv, index),
+          "OFI clock windows");
     } else if (argument == "--markout-bins") {
       options.markout_bins_output =
           require_value(argc, argv, index);
@@ -306,6 +339,14 @@ int main(int argc, char** argv) {
       tsla_lob::write_order_flow_signal_bins(
           dataset,
           options.order_flow_bins_output,
+          options.order_flow_grid);
+    }
+    if (!options.ofi_horizon_bins_output.empty()) {
+      tsla_lob::write_order_flow_horizon_bins(
+          dataset,
+          options.ofi_horizon_bins_output,
+          options.ofi_quote_windows,
+          options.ofi_clock_windows_us,
           options.order_flow_grid);
     }
     if (!options.markout_bins_output.empty()) {

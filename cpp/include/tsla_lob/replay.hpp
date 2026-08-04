@@ -82,6 +82,13 @@ void write_order_flow_signal_bins(
     const std::filesystem::path& output,
     std::size_t bins = 31);
 
+void write_order_flow_horizon_bins(
+    const Dataset& dataset,
+    const std::filesystem::path& output,
+    const std::vector<std::uint64_t>& quote_update_windows,
+    const std::vector<std::uint64_t>& clock_windows_us,
+    std::size_t bins = 31);
+
 void write_marketable_markout_bins(
     const Dataset& dataset,
     const std::filesystem::path& output,

@@ -476,6 +476,102 @@ def plot_order_flow_signal_ablation(
     return output
 
 
+def plot_ofi_horizon_selection(
+    metrics: pd.DataFrame,
+    path: Path | str,
+) -> Path:
+    """Plot train-only OFI horizon selection and untouched test scores."""
+
+    palette = _style()
+    panels = [
+        ("all_spreads", "All spreads"),
+        ("one_tick", "One-tick spread"),
+    ]
+    kind_order = {"price_spell": 0, "quote_updates": 1, "clock_us": 2}
+
+    def label(kind: str, value: int) -> str:
+        if kind == "price_spell":
+            return "Spell"
+        if kind == "quote_updates":
+            return f"Q{value}"
+        if value < 1_000:
+            return f"{value} us"
+        return f"{value // 1_000} ms"
+
+    figure, axes = plt.subplots(1, 2, figsize=(7.15, 3.35), layout="constrained")
+    for panel, (axis, (bucket, title)) in enumerate(
+        zip(axes, panels, strict=True)
+    ):
+        part = metrics.loc[
+            metrics["sample"].eq("best_quote_updates")
+            & metrics["spread_bucket"].eq(bucket)
+            & metrics["model"].eq("queue_and_ofi")
+        ].copy()
+        part["kind_order"] = part["horizon_kind"].map(kind_order)
+        part = part.sort_values(["kind_order", "horizon_value"]).reset_index(drop=True)
+        positions = np.arange(len(part))
+        validation = 100 * part["selection_relative_brier_reduction"].to_numpy(dtype=float)
+        test = 100 * part["test_relative_brier_reduction"].to_numpy(dtype=float)
+        axis.plot(
+            positions,
+            validation,
+            marker="o",
+            markersize=3.8,
+            linewidth=1.2,
+            color=palette["blue"],
+            label="Inner validation",
+        )
+        tested = np.isfinite(test)
+        axis.scatter(
+            positions[tested],
+            test[tested],
+            marker="o",
+            s=20,
+            color=palette["orange"],
+            label="Final 51 dates",
+            zorder=3,
+        )
+        selected = part["selected_fixed_on_train_dates"].to_numpy(dtype=bool)
+        axis.scatter(
+            positions[selected],
+            validation[selected],
+            marker="*",
+            s=75,
+            color=palette["green"],
+            edgecolor=palette["background"],
+            linewidth=0.7,
+            zorder=4,
+            label="Selected",
+        )
+        axis.axhline(0, color=palette["line"], linewidth=0.8)
+        axis.axvline(0.5, color=palette["line"], linewidth=0.7)
+        axis.axvline(
+            0.5 + int(part["horizon_kind"].eq("quote_updates").sum()),
+            color=palette["line"],
+            linewidth=0.7,
+        )
+        axis.set_xticks(
+            positions,
+            [
+                label(str(kind), int(value))
+                for kind, value in part[["horizon_kind", "horizon_value"]].itertuples(
+                    index=False, name=None
+                )
+            ],
+            rotation=35,
+            ha="right",
+        )
+        axis.set_title(f"({chr(97 + panel)})  {title}", loc="left")
+        axis.set_xlabel("OFI lookback")
+        axis.set_ylabel("Brier reduction vs train frequency (%)")
+        _clean_axis(axis)
+    axes[0].legend(loc="best")
+    output = _prepare_path(path)
+    figure.savefig(output, bbox_inches="tight")
+    plt.close(figure)
+    return output
+
+
 def plot_marketable_markouts(
     metrics: pd.DataFrame,
     path: Path | str,

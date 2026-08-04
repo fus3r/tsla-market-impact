@@ -68,6 +68,31 @@ excluded. Multiple states can share the same eventual direction, so the
 statistical analysis resamples complete trading dates rather than treating
 states as independent trials.
 
+## Causal OFI horizon aggregates
+
+The multi-horizon exporter tests whether the price-spell reset above can be
+replaced by a fixed lookback. It emits the same queue/OFI grid and next-move
+labels for nine definitions:
+
+- cumulative OFI since the current midpoint was established;
+- the most recent 1, 5, 20, or 100 best-quote OFI increments, including the
+  current update;
+- best-quote OFI increments in the preceding 10, 100, 1,000, or 10,000
+  microseconds.
+
+The fixed windows cross price-spell boundaries and include the update that
+established the current midpoint. A clock window at time \(t\) uses increments
+in \((t-h,t]\), so an increment exactly on the left boundary is excluded. Every
+horizon must preserve the same date-level observation and direction counts;
+Python rejects the aggregate file if that identity fails.
+
+The analysis fits each fixed candidate through 6 August (148 included dates),
+selects by Brier score from 7 August through 17 October (50 included dates),
+refits the selected horizon on all 198 pre-test dates, and evaluates the final
+51 dates once. The adaptive price-spell horizon is a reference rather than a
+selection candidate. Only daily grid counts leave the licensed-data
+environment.
+
 ## Marketable markout aggregates
 
 The markout exporter applies the same causal queue/OFI grid to a hypothetical
@@ -133,6 +158,9 @@ cmake --build build
   --queue-bins data/processed/queue-imbalance-bins.csv \
   --order-flow-bins data/processed/order-flow-bins-31.csv \
   --order-flow-grid 31 \
+  --ofi-horizon-bins data/processed/ofi-horizon-bins-31.csv \
+  --ofi-quote-windows 1,5,20,100 \
+  --ofi-clock-windows-us 10,100,1000,10000 \
   --markout-bins data/processed/marketable-markout-bins-31.csv \
   --markout-latencies-us 0,10,100,1000,10000 \
   --landmark-bins data/processed/price-spell-landmark-bins-31.csv \
@@ -152,8 +180,8 @@ The benchmark reports two distinct costs:
 - `in_memory_replay` scans the included resident records, audits transitions,
   validates snapshots, and maintains a checksum.
 
-The queue, order-flow, markout, and landmark exports are separate passes after
-the measured replay and are not included in either timing.
+The queue, order-flow, multi-horizon, markout, and landmark exports are separate
+passes after the measured replay and are not included in either timing.
 
 The committed Release benchmark used one thread on an Apple M4 Pro. Its
 38,516,432 included events occupy 2,465,051,648 bytes as resident event

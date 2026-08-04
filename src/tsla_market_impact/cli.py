@@ -11,6 +11,7 @@ from .data import (
     prepare_visible_market_orders,
     run_session_coverage_audit,
 )
+from .horizons import run_ofi_horizon_analysis
 from .markouts import (
     run_marketable_markout_analysis,
     run_price_spell_landmark_analysis,
@@ -66,6 +67,19 @@ def _parser() -> argparse.ArgumentParser:
         help="Joint signal grid, repeated for at least two resolutions.",
     )
     order_flow_grid.add_argument("--results", type=Path, default=Path("results"))
+
+    ofi_horizons = subparsers.add_parser("analyze-ofi-horizons")
+    ofi_horizons.add_argument("--bins", type=Path, required=True)
+    ofi_horizons.add_argument(
+        "--results",
+        type=Path,
+        default=Path("results"),
+    )
+    ofi_horizons.add_argument(
+        "--figures",
+        type=Path,
+        default=Path("report/figures"),
+    )
 
     markouts = subparsers.add_parser("analyze-markouts")
     markouts.add_argument("--bins", type=Path, required=True)
@@ -157,6 +171,13 @@ def main() -> None:
         result = run_order_flow_grid_robustness(
             _grid_bin_specs(args.bins),
             args.results,
+            analysis_policy=policy,
+        )
+    elif args.command == "analyze-ofi-horizons":
+        result = run_ofi_horizon_analysis(
+            args.bins,
+            args.results,
+            args.figures,
             analysis_policy=policy,
         )
     elif args.command == "analyze-markouts":

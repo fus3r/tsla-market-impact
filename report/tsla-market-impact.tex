@@ -97,8 +97,12 @@ mid-price change from current queue imbalance and causal top-of-book OFI. The
 combined model reaches ROC-AUC \CombinedAllAuc{} and reduces Brier score by
 \CombinedAllBrierReduction{} across all spreads. In the exploratory one-tick
 subset, the corresponding values are \CombinedOneTickAuc{} and
-\CombinedOneTickBrierReduction{}. A state-level marketable-markout gate
-subtracts the displayed half-spread and delays entry. At one tick, its top
+\CombinedOneTickBrierReduction{}. A nested comparison selects fixed OFI
+lookbacks using only earlier dates, but the selected windows have
+\OfiFixedAllPenalty{} and \OfiFixedOneTickPenalty{} more Brier error than the
+price-spell reset on the pooled and one-tick holdouts. A state-level
+marketable-markout gate subtracts the displayed half-spread and delays entry.
+At one tick, its top
 10-percent training-confidence tail has a net markout of
 \MarkoutOneTickZeroNet{} basis points immediately and \MarkoutOneTickTenNet{}
 at 10 microseconds, but the 100-microsecond interval crosses zero; the
@@ -677,6 +681,80 @@ queue position is not a trading strategy.
   \label{fig:queue}
 \end{figure}
 
+\subsection{Selecting a fixed OFI lookback without test leakage}
+
+The since-price-change feature has a variable horizon: a long-lived price
+spell accumulates more OFI than a short-lived one. I therefore compare it with
+two families of fixed, causal lookbacks. If $j(t)$ indexes best-quote updates
+up to state $t$, the update-count feature sums the current and preceding
+$K-1$ OFI increments for
+$K\in\{1,5,20,100\}$. The clock-time feature uses
+\begin{equation}
+  E_t^{(\Delta)}
+    = \sum_{u:\,t-\Delta < t_u \leq t} e_u,
+  \qquad
+  \Delta\in\{10,100,1000,10000\}\ \text{microseconds}.
+\end{equation}
+Both families can cross the preceding price-spell boundary and include the
+observed update at $t$. The adaptive reference instead discards the transition
+that established the current mid-price and starts accumulating immediately
+after it. Every candidate uses the same depth normalization, arctangent
+transform, $31\times31$ grid, labels, dates, and spread buckets.
+
+The final 51 dates do not choose the horizon. The first
+\OfiHorizonDevelopmentDates{} dates fit each fixed candidate, and the next
+\OfiHorizonSelectionDates{} dates select the lowest Brier score separately for
+each spread sample and model. The selected candidate is then refit on all 198
+pre-test dates and scored once on the final 51. The price-spell reset is
+excluded from selection and retained as the adaptive reference. Rejected fixed
+candidates retain no final-period scores. Complete-date bootstrap comparisons
+pair the two evaluated losses on the same holdout dates.
+
+\begin{table}[H]
+  \centering
+  \caption{Train-only fixed-horizon selection for the combined queue/OFI model.
+  Validation and test reductions use the corresponding earlier-date frequency
+  baseline. The last column is the selected fixed window's relative Brier
+  error increase over the adaptive price-spell reset on the final 51 dates.}
+  \label{tab:ofihorizons}
+  \small
+  \begin{tabular}{llrrrr}
+    \toprule
+    Spread & Fixed lookback & Val. reduction & Test AUC & Test reduction &
+      Increase vs reset [95\%] \\
+    \midrule
+    All & \OfiFixedAllWindow{} & \OfiFixedAllValidationReduction{} &
+      \OfiFixedAllAuc{} & \OfiFixedAllBrierReduction{} &
+      \OfiFixedAllPenalty{} [\OfiFixedAllPenaltyLower{}, \OfiFixedAllPenaltyUpper{}] \\
+    One tick & \OfiFixedOneTickWindow{} &
+      \OfiFixedOneTickValidationReduction{} & \OfiFixedOneTickAuc{} &
+      \OfiFixedOneTickBrierReduction{} &
+      \OfiFixedOneTickPenalty{} [\OfiFixedOneTickPenaltyLower{}, \OfiFixedOneTickPenaltyUpper{}] \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The pooled validation block selects a \OfiFixedAllWindow{} clock window; the
+one-tick block selects \OfiFixedOneTickWindow{}. Both retain substantial
+directional information, but both lose to the adaptive reset on untouched
+dates. The relative Brier penalties are \OfiFixedAllPenalty{}
+$[\OfiFixedAllPenaltyLower{},\,\OfiFixedAllPenaltyUpper{}]$ and
+\OfiFixedOneTickPenalty{}
+$[\OfiFixedOneTickPenaltyLower{},\,\OfiFixedOneTickPenaltyUpper{}]$. This
+negative result supports the original reset rule within the pre-specified
+candidate set; it does not establish that price-spell OFI is universally
+optimal.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/ofi-horizon-selection.pdf}
+  \caption{Combined-model Brier reductions for the adaptive price-spell reset,
+  fixed quote-update windows (Q), and fixed clock windows. Stars mark the fixed
+  horizon selected on the inner validation dates. Orange final-period scores
+  appear only for that selection and the pre-specified adaptive reference.}
+  \label{fig:ofihorizons}
+\end{figure}
+
 \subsection{Marketable markout gate}
 
 The direction scores do not include the cost of crossing the book. I therefore
@@ -964,9 +1042,11 @@ this included TSLA sample in-sample; the cross-asset claim in
   \item Several states in the main next-move experiment can share one eventual
   label. The 100-microsecond landmark removes that repetition for a separate
   protocol, but filters short spells and changes the target population.
-  Uncertainty is resampled at the trading-date level. OFI also depends on the
-  waiting horizon to that next move, so another horizon defines a different
-  feature.
+  Uncertainty is resampled at the trading-date level. The fixed-horizon
+  experiment tests eight alternatives, but they include the update that
+  establishes a new mid-price and can cross spell boundaries. It therefore
+  does not isolate horizon length from reset semantics or exhaust all causal
+  OFI summaries.
   \item Both marketable-markout gates assume a one-unit fill at the displayed
   best quote. The terminal midpoint is not an executable exit, and fees,
   impact, fill uncertainty, inventory, capital, and risk limits are absent.
@@ -1003,14 +1083,15 @@ an aggregate scheduled-close audit. It then reconstructs the two transaction
 tables from the included sessions, builds event-time windows, fits the models,
 and writes the remaining aggregate files under \texttt{results/}. The C++20
 library loads the same policy, rejects undeclared incomplete sessions, audits
-finite-depth transitions, and exports daily queue, joint queue/OFI, and
-state-level markout and price-spell landmark bins. The figures are vector PDFs.
-Synthetic tests cover file pairing, source coverage, half-day filtering, book
-alignment, day boundaries, fixed chronological splits, complete-date
-resampling, queue/OFI ablation, markout accounting, non-overlapping price-spell
-landmarks, grid robustness, and the scaling regressions. Reproducing the annual
-transaction tables, replay, and aggregate grids requires licensed LOBSTER
-files, which are not tracked.
+finite-depth transitions, and exports daily queue, joint queue/OFI,
+multi-horizon OFI, state-level markout, and price-spell landmark bins. The
+figures are vector PDFs. Synthetic tests cover file pairing, source coverage,
+half-day filtering, book alignment, day boundaries, fixed chronological
+splits, complete-date resampling, queue/OFI ablation, nested train-only horizon
+selection, markout accounting, non-overlapping price-spell landmarks, grid
+robustness, and the scaling regressions. Reproducing the annual transaction
+tables, replay, and aggregate grids requires licensed LOBSTER files, which are
+not tracked.
 
 The course presentation lists L. Cohen, R. Darwish, A. Pariente, H. Rohrbach,
 and R. Sithisak. Anastasia Bugaenko supervised the work. I wrote this standalone
@@ -1035,7 +1116,10 @@ informative than the static queue state across all spreads: the combined model
 reaches ROC-AUC \CombinedAllAuc{} and reduces Brier score by
 \CombinedAllBrierReduction{} on later dates. Queue and OFI complement each
 other in the exploratory one-tick subset, where the combined ROC-AUC is
-\CombinedOneTickAuc{}.
+\CombinedOneTickAuc{}. A nested horizon ablation rejects the simple alternative
+that a fixed OFI lookback improves this result: the selected fixed windows have
+\OfiFixedAllPenalty{} more Brier error across all spreads and
+\OfiFixedOneTickPenalty{} more in the one-tick subset than the adaptive reset.
 
 The execution-cost gate changes the interpretation. The pooled direction score
 does not cover the displayed spread even at zero latency. The exploratory

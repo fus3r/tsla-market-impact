@@ -8,11 +8,12 @@ the three unavailable truncated pairs.
 The first question asks whether signed order count adds information about a
 same-window mid-price change after signed share volume is known. A separate
 forward experiment asks whether current queue imbalance and causal top-of-book
-order flow predict the direction of the next mid-price change. A marketable
-markout gate then asks whether those direction scores survive the displayed
-spread and an explicit decision-to-entry delay. A second gate samples one
-fixed clock-time landmark per price spell so that candidate decisions no
-longer share a terminal price move.
+order flow predict the direction of the next mid-price change. A nested
+comparison then selects among fixed event- and clock-time OFI lookbacks without
+using the final dates. A marketable markout gate asks whether those direction
+scores survive the displayed spread and an explicit decision-to-entry delay. A
+second gate samples one fixed clock-time landmark per price spell so that
+candidate decisions no longer share a terminal price move.
 
 It does in this sample. The fixed test period begins on 18 October, after 198
 included training dates, and contains 51 dates with no trimming of the response.
@@ -54,6 +55,16 @@ an interval of 5.22% to 8.79%. The pooled and one-tick conclusions are unchanged
 with 21, 31, and 41 bins per feature axis. Several states share one next-move
 label, OFI depends on the waiting horizon, and a direction score before fees,
 latency, and queue position is not a trading strategy.
+
+The reset above has a variable age, so a nested comparison tests whether a
+fixed lookback is preferable. Eight causal event- and clock-time windows are
+fit through 6 August (148 included dates), selected from 7 August through
+17 October (50 included dates), refit on all 198 pre-test dates, and scored
+once on the final 51 dates. The combined model selects 10 ms for the pooled
+sample and 1 ms for one-tick states. Both lose to the adaptive price-spell
+reset: their test Brier errors are 2.09% [1.77%, 2.43%] and 5.71% [3.86%,
+7.65%] higher, respectively. This negative result supports the reset within
+the candidate set; it does not establish a universal OFI horizon.
 
 The markout diagnostic converts the combined signal into buy/sell decisions,
 prices a one-unit marketable order at the displayed best quote, and marks it at
@@ -170,19 +181,20 @@ wire-to-wire trading latency.
 
 - `analysis-policy.conf` is the shared Python/C++ source and calendar policy.
 - `cpp/` contains the fixed-width decoder, annual source-integrity gate, replay
-  benchmark, daily queue, joint queue/OFI, state-level markout, and price-spell
-  landmark exporters, and the [finite-depth transition contract](cpp/README.md).
+  benchmark, daily queue, joint queue/OFI, causal multi-horizon, state-level
+  markout, and price-spell landmark exporters, and the
+  [finite-depth transition contract](cpp/README.md).
 - `src/tsla_market_impact/` contains the LOBSTER reconstruction, impact study,
-  chronological queue/OFI ablation, and marketable-markout and price-spell
-  landmark analyses.
+  chronological queue/OFI ablation, nested horizon selection, and
+  marketable-markout and price-spell landmark analyses.
 - `results/` contains aggregate tables, including the 252-row coverage audit
-  and annual level-2 replay, benchmark, queue-model, order-flow, markout, and
-  landmark results. Licensed rows are not included.
+  and annual level-2 replay, benchmark, queue-model, order-flow, OFI-horizon,
+  markout, and landmark results. Licensed rows are not included.
 - `report/` contains the LaTeX source, figures, references, and compiled PDF.
 - `tests/` checks source integrity, data alignment, event-time windows,
   chronological splits, complete-date bootstrap, queue and markout evaluation,
-  one-signal-per-spell deadlines, and scaling fits, plus a complete CLI run on
-  a hand-written redistributable session.
+  nested horizon selection, one-signal-per-spell deadlines, and scaling fits,
+  plus a complete CLI run on a hand-written redistributable session.
 
 ## Data
 
@@ -271,6 +283,9 @@ Regenerate the annual C++ benchmark after the tests pass:
   --queue-bins data/processed/queue-imbalance-bins.csv \
   --order-flow-bins data/processed/order-flow-bins-31.csv \
   --order-flow-grid 31 \
+  --ofi-horizon-bins data/processed/ofi-horizon-bins-31.csv \
+  --ofi-quote-windows 1,5,20,100 \
+  --ofi-clock-windows-us 10,100,1000,10000 \
   --markout-bins data/processed/marketable-markout-bins-31.csv \
   --markout-latencies-us 0,10,100,1000,10000 \
   --landmark-bins data/processed/price-spell-landmark-bins-31.csv \
@@ -313,6 +328,19 @@ tsla-impact analyze-order-flow-grid \
 
 The joint grid remains local. The committed model, comparison, calibration,
 robustness, and vector-figure artifacts contain aggregate evidence only.
+
+Select a fixed OFI horizon on the 50-date inner validation block, refit it on
+all 198 pre-test dates, and compare it with the adaptive reset on the final 51:
+
+```bash
+tsla-impact analyze-ofi-horizons \
+  --bins data/processed/ofi-horizon-bins-31.csv
+```
+
+The 31-bin horizon grid remains local. The committed metrics, model metadata,
+selection table, and vector figure are compact outputs of the fixed nested
+protocol. Repeating the export and command at 21 bins preserves both selected
+windows and the negative fixed-versus-adaptive conclusion.
 
 Apply the train-defined confidence rules to the displayed-spread and latency
 diagnostic:

@@ -800,6 +800,222 @@ void write_order_flow_signal_bins(
   }
 }
 
+void write_order_flow_horizon_bins(
+    const Dataset& dataset,
+    const std::filesystem::path& output,
+    const std::vector<std::uint64_t>& quote_update_windows,
+    const std::vector<std::uint64_t>& clock_windows_us,
+    std::size_t bins) {
+  if (bins < 3) {
+    throw std::invalid_argument(
+        "OFI horizon grid size must be at least 3");
+  }
+  if (quote_update_windows.empty() || clock_windows_us.empty()) {
+    throw std::invalid_argument(
+        "OFI horizon export requires quote-update and clock-time windows");
+  }
+  if (
+      std::set<std::uint64_t>(
+          quote_update_windows.begin(),
+          quote_update_windows.end()).size() !=
+          quote_update_windows.size() ||
+      std::set<std::uint64_t>(
+          clock_windows_us.begin(),
+          clock_windows_us.end()).size() !=
+          clock_windows_us.size() ||
+      std::ranges::any_of(
+          quote_update_windows,
+          [](std::uint64_t value) { return value == 0; }) ||
+      std::ranges::any_of(
+          clock_windows_us,
+          [](std::uint64_t value) {
+            return value == 0 ||
+                   value >
+                       std::numeric_limits<std::uint64_t>::max() /
+                           1'000ULL;
+          })) {
+    throw std::invalid_argument(
+        "OFI horizon windows must be positive, unique, and fit in nanoseconds");
+  }
+
+  struct Horizon {
+    std::string_view kind;
+    std::uint64_t value;
+  };
+  std::vector<Horizon> horizons = {{"price_spell", 0}};
+  for (std::uint64_t window : quote_update_windows) {
+    horizons.push_back({"quote_updates", window});
+  }
+  for (std::uint64_t window : clock_windows_us) {
+    horizons.push_back({"clock_us", window});
+  }
+
+  std::ofstream stream(output);
+  if (!stream) {
+    throw std::runtime_error(
+        "cannot write OFI horizon bins: " + output.string());
+  }
+  stream
+      << "date,sample,spread_bucket,horizon_kind,horizon_value,"
+         "queue_bin,ofi_bin,queue_center,ofi_center,observations,"
+         "up_moves,down_moves\n";
+  stream << std::setprecision(10);
+
+  for (const SessionData& session : dataset.sessions) {
+    std::vector<
+        std::array<
+            std::vector<BinCount>,
+            spread_bucket_names.size()>>
+        horizon_counts(horizons.size());
+    for (auto& counts : horizon_counts) {
+      for (std::vector<BinCount>& bucket_counts : counts) {
+        bucket_counts.resize(bins * bins);
+      }
+    }
+
+    std::vector<std::uint64_t> quote_times;
+    std::vector<std::int64_t> quote_ofi_prefix = {0};
+    std::size_t run_start = 0;
+    while (run_start < session.events.size()) {
+      const std::int64_t current_mid =
+          midpoint_twice(session.events[run_start].book);
+      std::size_t next_run = run_start + 1;
+      while (
+          next_run < session.events.size() &&
+          midpoint_twice(session.events[next_run].book) ==
+              current_mid) {
+        ++next_run;
+      }
+      if (next_run == session.events.size()) {
+        break;
+      }
+      const int direction =
+          midpoint_twice(session.events[next_run].book) >
+                  current_mid
+              ? 1
+              : -1;
+
+      std::int64_t price_spell_ofi = 0;
+      for (std::size_t index = run_start;
+           index < next_run;
+           ++index) {
+        const BookSnapshot& snapshot = session.events[index].book;
+        const std::int64_t update_ofi =
+            index == 0
+                ? 0
+                : top_of_book_ofi(
+                      session.events[index - 1].book,
+                      snapshot);
+        if (index > run_start) {
+          price_spell_ofi += update_ofi;
+        }
+        if (
+            index != run_start &&
+            same_best_quote(
+                session.events[index - 1].book,
+                snapshot)) {
+          continue;
+        }
+
+        quote_times.push_back(
+            session.events[index].message.timestamp_ns);
+        quote_ofi_prefix.push_back(
+            quote_ofi_prefix.back() + update_ofi);
+        const std::size_t quote_count = quote_times.size();
+        const std::size_t queue = signal_bin(
+            level_one_queue_imbalance(snapshot),
+            bins);
+        const std::size_t bucket = spread_bucket(snapshot);
+
+        const auto accumulate =
+            [&](std::size_t horizon_index,
+                std::int64_t window_ofi) {
+              const std::size_t ofi = signal_bin(
+                  bounded_order_flow_pressure(
+                      window_ofi,
+                      snapshot),
+                  bins);
+              const std::size_t cell = queue * bins + ofi;
+              accumulate_bin(
+                  horizon_counts[horizon_index][0][cell],
+                  direction);
+              accumulate_bin(
+                  horizon_counts[horizon_index][bucket][cell],
+                  direction);
+            };
+        accumulate(0, price_spell_ofi);
+
+        std::size_t horizon_index = 1;
+        for (std::uint64_t window : quote_update_windows) {
+          const std::size_t width =
+              static_cast<std::size_t>(
+                  std::min<std::uint64_t>(
+                      window,
+                      quote_count));
+          const std::size_t first = quote_count - width;
+          accumulate(
+              horizon_index,
+              quote_ofi_prefix[quote_count] -
+                  quote_ofi_prefix[first]);
+          ++horizon_index;
+        }
+
+        const std::uint64_t signal_time = quote_times.back();
+        for (std::uint64_t window_us : clock_windows_us) {
+          const std::uint64_t window_ns =
+              window_us * 1'000ULL;
+          const std::uint64_t lower =
+              window_ns >= signal_time
+                  ? 0
+                  : signal_time - window_ns;
+          const auto first = std::upper_bound(
+              quote_times.begin(),
+              quote_times.end(),
+              lower);
+          const std::size_t first_index =
+              static_cast<std::size_t>(
+                  first - quote_times.begin());
+          accumulate(
+              horizon_index,
+              quote_ofi_prefix[quote_count] -
+                  quote_ofi_prefix[first_index]);
+          ++horizon_index;
+        }
+      }
+      run_start = next_run;
+    }
+
+    for (std::size_t horizon = 0;
+         horizon < horizons.size();
+         ++horizon) {
+      for (std::size_t bucket = 0;
+           bucket < spread_bucket_names.size();
+           ++bucket) {
+        for (std::size_t queue = 0; queue < bins; ++queue) {
+          for (std::size_t ofi = 0; ofi < bins; ++ofi) {
+            const BinCount& count =
+                horizon_counts[horizon][bucket]
+                              [queue * bins + ofi];
+            if (count.observations == 0) {
+              continue;
+            }
+            stream
+                << session.date << ",best_quote_updates,"
+                << spread_bucket_names[bucket] << ','
+                << horizons[horizon].kind << ','
+                << horizons[horizon].value << ',' << queue
+                << ',' << ofi << ','
+                << bin_center(queue, bins) << ','
+                << bin_center(ofi, bins) << ','
+                << count.observations << ',' << count.up_moves
+                << ',' << count.down_moves << '\n';
+          }
+        }
+      }
+    }
+  }
+}
+
 void write_marketable_markout_bins(
     const Dataset& dataset,
     const std::filesystem::path& output,

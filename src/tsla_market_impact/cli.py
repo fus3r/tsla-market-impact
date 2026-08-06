@@ -20,6 +20,7 @@ from .orderflow import run_order_flow_analysis, run_order_flow_grid_robustness
 from .pipeline import run_analysis
 from .policy import DEFAULT_ANALYSIS_POLICY, load_analysis_policy
 from .queue import run_queue_analysis
+from .round_trips import run_price_spell_round_trip_analysis
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -94,6 +95,15 @@ def _parser() -> argparse.ArgumentParser:
     landmarks.add_argument("--bins", type=Path, required=True)
     landmarks.add_argument("--results", type=Path, default=Path("results"))
     landmarks.add_argument(
+        "--figures",
+        type=Path,
+        default=Path("report/figures"),
+    )
+
+    round_trips = subparsers.add_parser("analyze-round-trips")
+    round_trips.add_argument("--bins", type=Path, required=True)
+    round_trips.add_argument("--results", type=Path, default=Path("results"))
+    round_trips.add_argument(
         "--figures",
         type=Path,
         default=Path("report/figures"),
@@ -189,6 +199,13 @@ def main() -> None:
         )
     elif args.command == "analyze-landmarks":
         result = run_price_spell_landmark_analysis(
+            args.bins,
+            args.results,
+            args.figures,
+            analysis_policy=policy,
+        )
+    elif args.command == "analyze-round-trips":
+        result = run_price_spell_round_trip_analysis(
             args.bins,
             args.results,
             args.figures,

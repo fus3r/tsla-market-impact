@@ -13,7 +13,9 @@ comparison then selects among fixed event- and clock-time OFI lookbacks without
 using the final dates. A marketable markout gate asks whether those direction
 scores survive the displayed spread and an explicit decision-to-entry delay. A
 second gate samples one fixed clock-time landmark per price spell so that
-candidate decisions no longer share a terminal price move.
+candidate decisions no longer share a terminal price move. A depth-constrained
+stress test then crosses the displayed level-2 book at both entry and exit for
+three fixed order sizes.
 
 It does in this sample. The fixed test period begins on 18 October, after 198
 included training dates, and contains 51 dates with no trimming of the response.
@@ -109,6 +111,28 @@ risk limits remain absent. This filters short spells and changes the fitted
 confidence cutoff, so it is not a paired estimate of the state-level gate. The
 one-tick stratum remains exploratory on one stock-year.
 
+The depth-constrained test replaces the terminal midpoint with the opposite
+marketable VWAP in the first snapshot after the next price change. Entry and
+exit may consume the two displayed levels; a requested size is
+capacity-censored unless both legs fit. For the same combined-model 10%
+train-confidence rule:
+
+| Landmark sample | Entry latency | Size | Filled round trips | Capacity-censored | Zero-fee quoted PnL |
+|---|---:|---:|---:|---:|---:|
+| All spreads | 0 us | 1 share | 248,800 | 0.0% | -3.941 bp [-4.274, -3.624] |
+| One tick | 0 us | 1 share | 1,120 | 0.0% | -0.684 bp [-0.756, -0.619] |
+| One tick | 10 us | 1 share | 1,006 | 0.0% | -0.713 bp [-0.794, -0.641] |
+| One tick | 0 us | 100 shares | 532 | 52.5% | -1.398 bp [-1.546, -1.259] |
+| One tick | 0 us | 500 shares | 25 | 97.8% | -1.891 bp [-3.097, -1.104] |
+
+The earlier +0.107 bp one-tick midpoint markout therefore does not survive a
+quoted exit, even at one share and before fees. This remains an optimistic
+diagnostic: the exit has zero reaction latency, displayed liquidity is assumed
+simultaneously fillable, and market impact beyond two levels, queue competition,
+inventory, capital, and risk limits are absent. The protocol was specified
+after the midpoint result was inspected, so it is a stress test rather than a
+new untouched validation, backtest, or deployable return estimate.
+
 The scaling analysis is separate. It applies the curve-collapse construction of
 Patzelt and Bouchaud to this included TSLA 2019 sample. The reported values
 0.9958 and 0.9975 are in-sample fits of estimated scale parameters, not
@@ -182,19 +206,20 @@ wire-to-wire trading latency.
 - `analysis-policy.conf` is the shared Python/C++ source and calendar policy.
 - `cpp/` contains the fixed-width decoder, annual source-integrity gate, replay
   benchmark, daily queue, joint queue/OFI, causal multi-horizon, state-level
-  markout, and price-spell landmark exporters, and the
+  markout, price-spell landmark, and depth-constrained round-trip exporters, and the
   [finite-depth transition contract](cpp/README.md).
 - `src/tsla_market_impact/` contains the LOBSTER reconstruction, impact study,
   chronological queue/OFI ablation, nested horizon selection, and
-  marketable-markout and price-spell landmark analyses.
+  marketable-markout, price-spell landmark, and quoted round-trip analyses.
 - `results/` contains aggregate tables, including the 252-row coverage audit
   and annual level-2 replay, benchmark, queue-model, order-flow, OFI-horizon,
-  markout, and landmark results. Licensed rows are not included.
+  markout, landmark, and round-trip results. Licensed rows are not included.
 - `report/` contains the LaTeX source, figures, references, and compiled PDF.
 - `tests/` checks source integrity, data alignment, event-time windows,
   chronological splits, complete-date bootstrap, queue and markout evaluation,
-  nested horizon selection, one-signal-per-spell deadlines, and scaling fits,
-  plus a complete CLI run on a hand-written redistributable session.
+  nested horizon selection, one-signal-per-spell deadlines, round-trip
+  accounting and capacity censoring, and scaling fits, plus a complete CLI run
+  on a hand-written redistributable session.
 
 ## Data
 
@@ -290,7 +315,9 @@ Regenerate the annual C++ benchmark after the tests pass:
   --markout-latencies-us 0,10,100,1000,10000 \
   --landmark-bins data/processed/price-spell-landmark-bins-31.csv \
   --landmark-age-us 100 \
-  --landmark-latencies-us 0,10,100,1000,10000
+  --landmark-latencies-us 0,10,100,1000,10000 \
+  --round-trip-bins data/processed/price-spell-round-trip-bins-31.csv \
+  --round-trip-sizes 1,100,500
 ```
 
 The command audits every delivered pair, refuses any undeclared coverage
@@ -364,6 +391,17 @@ tsla-impact analyze-landmarks \
 The licensed-data-derived landmark grid remains local. The committed 300-row
 metric table, model metadata, and vector figure contain aggregate evidence
 only.
+
+Apply the same train-defined rules to displayed level-2 entry and exit VWAPs:
+
+```bash
+tsla-impact analyze-round-trips \
+  --bins data/processed/price-spell-round-trip-bins-31.csv
+```
+
+The 2,509,350-cell licensed-data-derived grid remains local. The committed
+360-row metric table, model metadata, and vector figure retain every policy,
+including zero-fill scenarios.
 
 ## Origin and credit
 

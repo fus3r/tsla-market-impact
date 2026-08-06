@@ -645,6 +645,83 @@ def plot_marketable_markouts(
     return output
 
 
+def plot_price_spell_round_trips(
+    metrics: pd.DataFrame,
+    path: Path | str,
+) -> Path:
+    """Plot depth-constrained quoted round trips by size and entry latency."""
+
+    palette = _style()
+    panels = [
+        ("all_spreads", "All spreads"),
+        ("one_tick", "One-tick spread"),
+    ]
+    sizes = sorted(int(value) for value in metrics["shares"].unique())
+    colors = [
+        palette["blue"],
+        palette["orange"],
+        palette["green"],
+        palette["purple"],
+    ]
+    figure, axes = plt.subplots(1, 2, figsize=(7.15, 3.35), layout="constrained")
+    for panel, (axis, (bucket, title)) in enumerate(
+        zip(axes, panels, strict=True)
+    ):
+        for index, shares in enumerate(sizes):
+            part = metrics.loc[
+                metrics["sample"].eq("price_spell_round_trips")
+                & metrics["spread_bucket"].eq(bucket)
+                & metrics["model"].eq("queue_and_ofi")
+                & metrics["target_train_signal_fraction"].eq(0.10)
+                & metrics["shares"].eq(shares)
+            ].sort_values("entry_latency_us")
+            if part.empty:
+                continue
+            positions = np.arange(len(part))
+            pnl = part["quoted_round_trip_mean_bps"].to_numpy(dtype=float)
+            lower = part["quoted_round_trip_lower_95_bps"].to_numpy(dtype=float)
+            upper = part["quoted_round_trip_upper_95_bps"].to_numpy(dtype=float)
+            axis.errorbar(
+                positions,
+                pnl,
+                yerr=np.vstack([pnl - lower, upper - pnl]),
+                fmt="o-",
+                color=colors[index % len(colors)],
+                capsize=2.2,
+                linewidth=1.1,
+                markersize=3.8,
+                label=f"{shares:,} shares",
+            )
+        latencies = sorted(
+            int(value)
+            for value in metrics.loc[
+                metrics["spread_bucket"].eq(bucket),
+                "entry_latency_us",
+            ].unique()
+        )
+        labels = [
+            (
+                "0"
+                if value == 0
+                else f"{value} us"
+                if value < 1_000
+                else f"{value // 1_000} ms"
+            )
+            for value in latencies
+        ]
+        axis.set_xticks(np.arange(len(latencies)), labels)
+        axis.axhline(0, color=palette["line"], linewidth=0.9)
+        axis.set_title(f"({chr(97 + panel)})  {title}", loc="left")
+        axis.set_xlabel("Landmark-to-entry latency")
+        axis.set_ylabel("Zero-fee quoted round-trip PnL (bp)")
+        _clean_axis(axis)
+    axes[0].legend(loc="best")
+    output = _prepare_path(path)
+    figure.savefig(output, bbox_inches="tight")
+    plt.close(figure)
+    return output
+
+
 def plot_scaling_collapse(
     collapsed: pd.DataFrame,
     shape: dict[str, float],

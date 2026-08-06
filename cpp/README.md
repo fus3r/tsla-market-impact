@@ -135,6 +135,32 @@ best, while the terminal midpoint is a mark rather than an executable exit.
 Fees, impact, fill uncertainty, inventory, capital, and risk limits remain
 outside the model.
 
+## Depth-constrained price-spell round trips
+
+The round-trip exporter keeps the same 100-microsecond landmark, causal
+features, and entry-latency grid, but replaces the terminal midpoint with an
+opposite marketable order in the first snapshot after the next mid-price
+change. It sweeps at most the two displayed levels at both endpoints for fixed
+sizes of 1, 100, and 500 shares. A long path buys the entry asks and sells the
+exit bids; a short path sells the entry bids and buys the exit asks.
+
+Both long and short outcomes are aggregated for every signal cell before the
+direction model is fitted. Python can therefore apply a train-only decision
+rule without exporting row-level outcomes. A path is capacity-censored when
+either leg lacks enough displayed level-2 size. The aggregate identities are
+
+```text
+signals = arrived + stale
+arrived = action fills + action capacity-censored
+quoted PnL = signed midpoint move - entry cost - exit cost.
+```
+
+Only the pooled sample and the pre-specified exploratory one-tick sample are
+exported. The exit assumes zero reaction latency, displayed sizes are not
+reserved, and fees and market impact beyond the two displayed levels are
+omitted. This makes the quoted PnL an optimistic stress test rather than a fill
+simulation or backtest.
+
 ## Annual replay and benchmark
 
 The replay command discovers the level-2 pairs named by the shared
@@ -165,7 +191,9 @@ cmake --build build
   --markout-latencies-us 0,10,100,1000,10000 \
   --landmark-bins data/processed/price-spell-landmark-bins-31.csv \
   --landmark-age-us 100 \
-  --landmark-latencies-us 0,10,100,1000,10000
+  --landmark-latencies-us 0,10,100,1000,10000 \
+  --round-trip-bins data/processed/price-spell-round-trip-bins-31.csv \
+  --round-trip-sizes 1,100,500
 ```
 
 The committed aggregate covers 38,516,432 events. Excluding the 249 session
@@ -180,8 +208,9 @@ The benchmark reports two distinct costs:
 - `in_memory_replay` scans the included resident records, audits transitions,
   validates snapshots, and maintains a checksum.
 
-The queue, order-flow, multi-horizon, markout, and landmark exports are separate
-passes after the measured replay and are not included in either timing.
+The queue, order-flow, multi-horizon, markout, landmark, and round-trip exports
+are separate passes after the measured replay and are not included in either
+timing.
 
 The committed Release benchmark used one thread on an Apple M4 Pro. Its
 38,516,432 included events occupy 2,465,051,648 bytes as resident event

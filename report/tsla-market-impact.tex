@@ -18,8 +18,8 @@
 \hypersetup{
   pdftitle={Signed order count, order-book signals, markouts, and depth-aware replay: TSLA, 2019},
   pdfauthor={Riad Darwish},
-  pdfsubject={Conditional impact, next-price prediction, marketable markouts, price-spell landmarks, and finite-depth replay},
-  pdfkeywords={market impact, marketable markout, price-spell landmark, queue imbalance, order flow imbalance, market microstructure, LOBSTER, C++, TSLA}
+  pdfsubject={Conditional impact, next-price prediction, marketable markouts, quoted round trips, and finite-depth replay},
+  pdfkeywords={market impact, marketable markout, quoted round trip, price-spell landmark, queue imbalance, order flow imbalance, market microstructure, LOBSTER, C++, TSLA}
 }
 
 \input{results.tex}
@@ -53,7 +53,7 @@
   \vspace{6mm}
   {\large Riad Darwish\par}
   {\normalsize CentraleSup\'elec\par}
-  {\normalsize 4 August 2026\par}
+  {\normalsize 6 August 2026\par}
 \end{center}
 
 \vspace{3mm}
@@ -110,7 +110,10 @@ corresponding all-spread immediate markout is \MarkoutAllZeroNet{}. A fixed
 100-microsecond landmark then permits at most one signal per price spell. Its
 one-tick net markout falls from \LandmarkOneTickZeroNet{} immediately to
 \LandmarkOneTickTenNet{} after 10 microseconds and
-\LandmarkOneTickHundredNet{} after 100 microseconds.
+\LandmarkOneTickHundredNet{} after 100 microseconds. A depth-constrained gate
+then crosses the displayed book again at the next price move. The one-share,
+one-tick quoted round trip is \RoundTripOneOnePnl{} basis points
+$[\RoundTripOneOneLower{},\,\RoundTripOneOneUpper{}]$ before fees.
 
 I also apply the finite-size scaling construction of \citet{patzelt2018} to the
 same stock-year. The width and height scale regressions have in-sample \Rtwo{}
@@ -133,9 +136,10 @@ the study does not claim complete 2019 coverage or external replication.
 \end{center}
 
 \vspace{0.5em}
-\textbf{Keywords:} market impact, marketable markout, price-spell landmark,
-queue imbalance, order-flow imbalance, market microstructure, chronological
-validation, order-book replay, finite-size scaling
+\textbf{Keywords:} market impact, marketable markout, quoted round trip,
+price-spell landmark, queue imbalance, order-flow imbalance, market
+microstructure, chronological validation, order-book replay, finite-size
+scaling
 
 \section{Question}
 
@@ -148,7 +152,8 @@ First, does signed order count explain conditional price impact on later dates
 after signed volume has already been included? Second, do the current queues
 and order-flow changes observed since the last price move forecast the
 direction of the next move? Third, does that direction signal survive the
-displayed spread and an explicit delay between decision and entry?
+displayed spread, an explicit delay between decision and entry, and a quoted
+marketable exit?
 
 Signed volume alone explains \BaselineRtwo{} of the holdout variance. Fixed
 volume transforms explain \VolumeRtwo{}. Adding raw signed count brings the
@@ -946,6 +951,99 @@ backtest: the terminal midpoint is a mark rather than an executable exit, and
 fees, impact, fill uncertainty, inventory, capital, and risk limits remain
 absent.
 
+\subsection{Depth-constrained quoted round trips}
+
+I next replace the terminal midpoint with a second marketable order. This is a
+stress test of the preceding result, specified after that midpoint result had
+already been inspected, rather than a new untouched validation. The signal,
+100-microsecond landmark, train/test split, model, and confidence cutoff remain
+unchanged.
+
+For order size $q$, a long decision buys the displayed asks at entry and sells
+the displayed bids in the first snapshot after the next mid-price change. A
+short decision uses the reverse path. Each leg walks at most the two observed
+levels. If either endpoint cannot display all $q$ shares, that round trip is
+capacity-censored rather than extrapolated into unobserved depth. Within each
+filled aggregate cell, the quoted result obeys
+\[
+  P^{\mathrm{quoted}}
+  = P^{\mathrm{midpoint}}-C^{\mathrm{entry}}-C^{\mathrm{exit}}.
+\]
+Both possible action paths are aggregated before Python applies the
+train-fitted direction rule, so no row-level outcome or test-selected direction
+enters the model.
+
+The decomposition makes the earlier one-tick result transparent. At one share
+and zero entry latency, the signed midpoint move is
+\RoundTripOneOneMidpoint{} basis points and entry costs
+\RoundTripOneOneEntryCost{}, reproducing the earlier
+\LandmarkOneTickZeroNet{} basis-point markout after rounding. Crossing the
+post-move book costs another \RoundTripOneOneExitCost{} basis points. The
+quoted round trip is therefore \RoundTripOneOnePnl{}
+$[\RoundTripOneOneLower{},\,\RoundTripOneOneUpper{}]$. Across all spreads, the
+corresponding decomposition is \RoundTripAllOneMidpoint{} minus
+\RoundTripAllOneEntryCost{} minus \RoundTripAllOneExitCost{}, or
+\RoundTripAllOnePnl{} basis points.
+
+\begin{table}[H]
+  \centering
+  \caption{Depth-constrained quoted round trips for the combined model's
+  10-percent training-confidence rule on the final 51 dates. Capacity is the
+  fraction of arrived signals lacking the requested displayed size on at least
+  one leg. Intervals resample complete dates.}
+  \label{tab:round-trips}
+  \small
+  \begin{tabular}{llrrrr}
+    \toprule
+    Spread & Entry latency & Shares & Filled & Capacity & Zero-fee PnL [95\% interval] \\
+    \midrule
+    All & 0 us & 1 & \RoundTripAllOneFills{} & 0.0\% &
+      \RoundTripAllOnePnl{} [\RoundTripAllOneLower{}, \RoundTripAllOneUpper{}] \\
+    All & 0 us & 100 & \RoundTripAllHundredFills{} & \RoundTripAllHundredCapacity{} &
+      \RoundTripAllHundredPnl{} [\RoundTripAllHundredLower{}, \RoundTripAllHundredUpper{}] \\
+    One tick & 0 us & 1 & \RoundTripOneOneFills{} & 0.0\% &
+      \RoundTripOneOnePnl{} [\RoundTripOneOneLower{}, \RoundTripOneOneUpper{}] \\
+    One tick & 10 us & 1 & \RoundTripOneTenFills{} & 0.0\% &
+      \RoundTripOneTenPnl{} [\RoundTripOneTenLower{}, \RoundTripOneTenUpper{}] \\
+    One tick & 100 us & 1 & \RoundTripOneHundredLatencyFills{} & 0.0\% &
+      \RoundTripOneHundredLatencyPnl{} [\RoundTripOneHundredLatencyLower{},
+      \RoundTripOneHundredLatencyUpper{}] \\
+    One tick & 0 us & 100 & \RoundTripOneHundredFills{} & \RoundTripOneHundredCapacity{} &
+      \RoundTripOneHundredPnl{} [\RoundTripOneHundredLower{}, \RoundTripOneHundredUpper{}] \\
+    One tick & 0 us & 500 & \RoundTripOneFiveHundredFills{} &
+      \RoundTripOneFiveHundredCapacity{} &
+      \RoundTripOneFiveHundredPnl{} [\RoundTripOneFiveHundredLower{},
+      \RoundTripOneFiveHundredUpper{}] \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/price-spell-round-trips.pdf}
+  \caption{Zero-fee quoted round trips after the fixed price-spell landmark.
+  Both entry and exit walk up to two displayed levels. Bars are complete-date
+  95 percent intervals; missing tail points have no fully displayed round trip.}
+  \label{fig:round-trips}
+\end{figure}
+
+The result is negative before any fee for every displayed scenario in
+Table~\ref{tab:round-trips}. Increasing size also changes the evaluated sample:
+at 100 shares, \RoundTripOneHundredCapacity{} of arrived one-tick signals are
+capacity-censored; at 500 shares, only \RoundTripOneFiveHundredFills{} round
+trips remain. These are not capacity estimates for a strategy. The committed
+360-row grid retains every specified scenario, including the three without a
+fill; their economic fields remain null.
+
+The diagnostic is deliberately optimistic in other respects. Exit uses the
+first snapshot after the next price move with zero reaction latency, displayed
+size is assumed simultaneously available to the hypothetical order, and no fee
+is charged. Any non-negative fee lowers the reported PnL. Market impact beyond
+walking the two displayed levels, queue competition, inventory, capital, and
+risk limits remain absent. The negative result rejects an economic reading of
+the positive midpoint markout under this quoted execution protocol; it does
+not estimate deployable returns.
+
 \section{Scaling analysis}
 \label{sec:scaling}
 
@@ -1047,11 +1145,14 @@ this included TSLA sample in-sample; the cross-asset claim in
   establishes a new mid-price and can cross spell boundaries. It therefore
   does not isolate horizon length from reset semantics or exhaust all causal
   OFI summaries.
-  \item Both marketable-markout gates assume a one-unit fill at the displayed
-  best quote. The terminal midpoint is not an executable exit, and fees,
-  impact, fill uncertainty, inventory, capital, and risk limits are absent.
-  The stated latency is one exogenous delay applied to LOBSTER event time; it
-  does not identify components of an implementable system.
+  \item The two midpoint-markout gates assume a one-unit fill at the displayed
+  best and do not provide an executable exit. The round-trip extension instead
+  walks the displayed level-2 book, but assumes that liquidity is
+  simultaneously available and exits with zero reaction latency. Fees, market
+  impact beyond two levels, queue competition, inventory, capital, and risk
+  limits remain absent. The stated entry latency is one exogenous delay applied
+  to LOBSTER event time; it does not identify components of an implementable
+  system.
   \item Markout confidence, latency, spread, and model comparisons are
   exploratory and receive no family-wise multiple-testing correction. The
   complete-date bootstrap addresses within-day dependence but not protocol
@@ -1084,11 +1185,12 @@ tables from the included sessions, builds event-time windows, fits the models,
 and writes the remaining aggregate files under \texttt{results/}. The C++20
 library loads the same policy, rejects undeclared incomplete sessions, audits
 finite-depth transitions, and exports daily queue, joint queue/OFI,
-multi-horizon OFI, state-level markout, and price-spell landmark bins. The
-figures are vector PDFs. Synthetic tests cover file pairing, source coverage,
-half-day filtering, book alignment, day boundaries, fixed chronological
-splits, complete-date resampling, queue/OFI ablation, nested train-only horizon
-selection, markout accounting, non-overlapping price-spell landmarks, grid
+multi-horizon OFI, state-level markout, price-spell landmark, and
+depth-constrained round-trip bins. The figures are vector PDFs. Synthetic tests
+cover file pairing, source coverage, half-day filtering, book alignment, day
+boundaries, fixed chronological splits, complete-date resampling, queue/OFI
+ablation, nested train-only horizon selection, markout accounting,
+non-overlapping price-spell landmarks, round-trip capacity censoring, grid
 robustness, and the scaling regressions. Reproducing the annual transaction
 tables, replay, and aggregate grids requires licensed LOBSTER files, which are
 not tracked.
@@ -1139,6 +1241,15 @@ but its 10-percent-target net markout falls to
 \LandmarkOneTickHundredNet{} after 100 microseconds. The pooled result remains
 strongly negative. Removing repeated terminal labels therefore narrows the
 exploratory positive tail rather than validating a strategy.
+
+Crossing the displayed book again at the next price move removes that remaining
+positive midpoint interpretation. At one share and zero entry latency, the
+one-tick result is \RoundTripOneOnePnl{} basis points
+$[\RoundTripOneOneLower{},\,\RoundTripOneOneUpper{}]$ before fees. At 100
+shares, \RoundTripOneHundredCapacity{} of arrived one-tick signals lack enough
+displayed level-2 size on at least one leg. The exit still assumes zero reaction
+latency, so this negative quoted result is a stress test rather than a backtest
+or deployable return estimate.
 
 The included TSLA sessions also fit the scaling form proposed by
 \citet{patzelt2018}. This is a within-sample application to one stock-year, not

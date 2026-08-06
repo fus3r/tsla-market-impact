@@ -102,6 +102,14 @@ void write_price_spell_landmark_bins(
     const std::vector<std::uint64_t>& latencies_us,
     std::size_t bins = 31);
 
+void write_price_spell_round_trip_bins(
+    const Dataset& dataset,
+    const std::filesystem::path& output,
+    std::uint64_t landmark_age_us,
+    const std::vector<std::uint64_t>& entry_latencies_us,
+    const std::vector<std::uint64_t>& order_sizes,
+    std::size_t bins = 31);
+
 [[nodiscard]] std::string replay_audit_json(
     const Dataset& dataset,
     const ReplayMetrics& metrics);

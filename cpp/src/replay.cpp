@@ -10,6 +10,7 @@
 #include <limits>
 #include <map>
 #include <numbers>
+#include <optional>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -140,12 +141,41 @@ struct MarkoutCount {
   long double half_spread_sum_bps{};
 };
 
+struct RoundTripOutcome {
+  long double midpoint_move_bps{};
+  long double entry_cost_bps{};
+  long double exit_cost_bps{};
+  long double quoted_pnl_bps{};
+};
+
+struct RoundTripSideCount {
+  std::uint64_t fills{};
+  long double midpoint_move_sum_bps{};
+  long double entry_cost_sum_bps{};
+  long double exit_cost_sum_bps{};
+  long double quoted_pnl_sum_bps{};
+};
+
+struct RoundTripCount {
+  std::uint64_t signals{};
+  std::uint64_t arrived{};
+  std::uint64_t up_moves{};
+  std::uint64_t down_moves{};
+  RoundTripSideCount long_side{};
+  RoundTripSideCount short_side{};
+};
+
 constexpr std::array<std::string_view, 5> spread_bucket_names = {
     "all_spreads",
     "one_tick",
     "two_to_five_ticks",
     "six_to_ten_ticks",
     "over_ten_ticks",
+};
+
+constexpr std::array<std::string_view, 2> round_trip_bucket_names = {
+    "all_spreads",
+    "one_tick",
 };
 
 std::size_t spread_bucket(const BookSnapshot& snapshot) {
@@ -187,6 +217,103 @@ double bin_center(std::size_t bin, std::size_t bins) {
   return -1.0 +
          2.0 * (static_cast<double>(bin) + 0.5) /
              static_cast<double>(bins);
+}
+
+std::optional<long double> displayed_vwap(
+    const Side& levels,
+    std::uint64_t order_size) {
+  std::uint64_t remaining = order_size;
+  long double notional = 0.0L;
+  for (const Level& level : levels) {
+    const std::uint64_t displayed =
+        static_cast<std::uint64_t>(level.size);
+    const std::uint64_t executed =
+        std::min(remaining, displayed);
+    notional +=
+        static_cast<long double>(executed) * level.price;
+    remaining -= executed;
+    if (remaining == 0) {
+      return notional / static_cast<long double>(order_size);
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<RoundTripOutcome> quoted_round_trip(
+    const BookSnapshot& entry,
+    const BookSnapshot& exit,
+    std::uint64_t order_size,
+    int action) {
+  const Side& entry_levels =
+      action > 0 ? entry.asks : entry.bids;
+  const Side& exit_levels =
+      action > 0 ? exit.bids : exit.asks;
+  const std::optional<long double> entry_vwap =
+      displayed_vwap(entry_levels, order_size);
+  const std::optional<long double> exit_vwap =
+      displayed_vwap(exit_levels, order_size);
+  if (!entry_vwap || !exit_vwap) {
+    return std::nullopt;
+  }
+
+  const long double entry_mid = midpoint_twice(entry);
+  const long double exit_mid = midpoint_twice(exit);
+  const long double scale = 10'000.0L / entry_mid;
+  RoundTripOutcome outcome;
+  if (action > 0) {
+    outcome.midpoint_move_bps =
+        (exit_mid - entry_mid) * scale;
+    outcome.entry_cost_bps =
+        (2.0L * *entry_vwap - entry_mid) * scale;
+    outcome.exit_cost_bps =
+        (exit_mid - 2.0L * *exit_vwap) * scale;
+    outcome.quoted_pnl_bps =
+        2.0L * (*exit_vwap - *entry_vwap) * scale;
+  } else {
+    outcome.midpoint_move_bps =
+        (entry_mid - exit_mid) * scale;
+    outcome.entry_cost_bps =
+        (entry_mid - 2.0L * *entry_vwap) * scale;
+    outcome.exit_cost_bps =
+        (2.0L * *exit_vwap - exit_mid) * scale;
+    outcome.quoted_pnl_bps =
+        2.0L * (*entry_vwap - *exit_vwap) * scale;
+  }
+  return outcome;
+}
+
+void accumulate_round_trip_side(
+    RoundTripSideCount& count,
+    const std::optional<RoundTripOutcome>& outcome) {
+  if (!outcome) {
+    return;
+  }
+  ++count.fills;
+  count.midpoint_move_sum_bps +=
+      outcome->midpoint_move_bps;
+  count.entry_cost_sum_bps += outcome->entry_cost_bps;
+  count.exit_cost_sum_bps += outcome->exit_cost_bps;
+  count.quoted_pnl_sum_bps += outcome->quoted_pnl_bps;
+}
+
+void accumulate_round_trip(
+    RoundTripCount& count,
+    int direction,
+    bool arrived,
+    const std::optional<RoundTripOutcome>& long_outcome,
+    const std::optional<RoundTripOutcome>& short_outcome) {
+  ++count.signals;
+  if (direction > 0) {
+    ++count.up_moves;
+  } else {
+    ++count.down_moves;
+  }
+  if (!arrived) {
+    return;
+  }
+  ++count.arrived;
+  accumulate_round_trip_side(count.long_side, long_outcome);
+  accumulate_round_trip_side(count.short_side, short_outcome);
 }
 
 void accumulate_bin(BinCount& count, int direction) {
@@ -1402,6 +1529,285 @@ void write_price_spell_landmark_bins(
                 << count.up_moves << ',' << count.down_moves << ','
                 << count.midpoint_move_sum_bps << ','
                 << count.half_spread_sum_bps << '\n';
+          }
+        }
+      }
+    }
+  }
+}
+
+void write_price_spell_round_trip_bins(
+    const Dataset& dataset,
+    const std::filesystem::path& output,
+    std::uint64_t landmark_age_us,
+    const std::vector<std::uint64_t>& entry_latencies_us,
+    const std::vector<std::uint64_t>& order_sizes,
+    std::size_t bins) {
+  if (bins < 3) {
+    throw std::invalid_argument(
+        "round-trip grid size must be at least 3");
+  }
+  if (landmark_age_us == 0) {
+    throw std::invalid_argument(
+        "round-trip landmark age must be positive");
+  }
+  if (entry_latencies_us.empty()) {
+    throw std::invalid_argument(
+        "at least one round-trip latency is required");
+  }
+  if (
+      order_sizes.empty() ||
+      std::ranges::any_of(
+          order_sizes,
+          [](std::uint64_t order_size) {
+            return order_size == 0;
+          })) {
+    throw std::invalid_argument(
+        "round-trip order sizes must be positive");
+  }
+  if (
+      std::set<std::uint64_t>(
+          entry_latencies_us.begin(),
+          entry_latencies_us.end()).size() !=
+      entry_latencies_us.size()) {
+    throw std::invalid_argument(
+        "round-trip latencies must be unique");
+  }
+  if (
+      std::set<std::uint64_t>(
+          order_sizes.begin(),
+          order_sizes.end()).size() != order_sizes.size()) {
+    throw std::invalid_argument(
+        "round-trip order sizes must be unique");
+  }
+  constexpr std::uint64_t max_microseconds =
+      std::numeric_limits<std::uint64_t>::max() / 1'000ULL;
+  if (
+      landmark_age_us > max_microseconds ||
+      std::ranges::any_of(
+          entry_latencies_us,
+          [](std::uint64_t latency_us) {
+            return latency_us > max_microseconds;
+          })) {
+    throw std::invalid_argument(
+        "round-trip landmark age and latencies must fit in nanoseconds");
+  }
+
+  std::ofstream stream(output);
+  if (!stream) {
+    throw std::runtime_error(
+        "cannot write price-spell round-trip bins: " +
+        output.string());
+  }
+  stream
+      << "date,sample,spread_bucket,landmark_age_us,entry_latency_us,"
+         "shares,queue_bin,ofi_bin,queue_center,ofi_center,signals,"
+         "arrived,stale,up_moves,down_moves,long_fills,"
+         "long_capacity_censored,long_midpoint_move_sum_bps,"
+         "long_entry_cost_sum_bps,long_exit_cost_sum_bps,"
+         "long_quoted_pnl_sum_bps,short_fills,"
+         "short_capacity_censored,short_midpoint_move_sum_bps,"
+         "short_entry_cost_sum_bps,short_exit_cost_sum_bps,"
+         "short_quoted_pnl_sum_bps\n";
+  stream << std::setprecision(12);
+
+  const std::uint64_t landmark_age_ns =
+      landmark_age_us * 1'000ULL;
+  for (const SessionData& session : dataset.sessions) {
+    std::vector<
+        std::vector<
+            std::array<
+                std::vector<RoundTripCount>,
+                round_trip_bucket_names.size()>>>
+        counts(entry_latencies_us.size());
+    for (auto& latency_counts : counts) {
+      latency_counts.resize(order_sizes.size());
+      for (auto& size_counts : latency_counts) {
+        for (
+            std::vector<RoundTripCount>& bucket_counts :
+            size_counts) {
+          bucket_counts.resize(bins * bins);
+        }
+      }
+    }
+
+    std::size_t run_start = 0;
+    while (run_start < session.events.size()) {
+      const std::int64_t current_mid =
+          midpoint_twice(session.events[run_start].book);
+      std::size_t next_run = run_start + 1;
+      while (
+          next_run < session.events.size() &&
+          midpoint_twice(session.events[next_run].book) ==
+              current_mid) {
+        ++next_run;
+      }
+      if (next_run == session.events.size()) {
+        break;
+      }
+
+      const std::uint64_t run_start_time =
+          session.events[run_start].message.timestamp_ns;
+      if (
+          landmark_age_ns >
+          std::numeric_limits<std::uint64_t>::max() -
+              run_start_time) {
+        throw std::overflow_error(
+            "price-spell round-trip landmark exceeds uint64 range");
+      }
+      const std::uint64_t landmark_time =
+          run_start_time + landmark_age_ns;
+      const std::uint64_t next_move_time =
+          session.events[next_run].message.timestamp_ns;
+      if (landmark_time >= next_move_time) {
+        run_start = next_run;
+        continue;
+      }
+
+      std::size_t landmark = run_start;
+      while (
+          landmark + 1 < next_run &&
+          session.events[landmark + 1].message.timestamp_ns <
+              landmark_time) {
+        ++landmark;
+      }
+      std::int64_t cumulative_ofi = 0;
+      for (std::size_t index = run_start + 1;
+           index <= landmark;
+           ++index) {
+        cumulative_ofi += top_of_book_ofi(
+            session.events[index - 1].book,
+            session.events[index].book);
+      }
+
+      const BookSnapshot& signal = session.events[landmark].book;
+      const std::size_t queue = signal_bin(
+          level_one_queue_imbalance(signal),
+          bins);
+      const std::size_t ofi = signal_bin(
+          bounded_order_flow_pressure(cumulative_ofi, signal),
+          bins);
+      const std::size_t cell = queue * bins + ofi;
+      const std::size_t bucket = spread_bucket(signal);
+      const int direction =
+          midpoint_twice(session.events[next_run].book) >
+                  current_mid
+              ? 1
+              : -1;
+      const BookSnapshot& exit =
+          session.events[next_run].book;
+
+      for (std::size_t latency = 0;
+           latency < entry_latencies_us.size();
+           ++latency) {
+        const std::uint64_t latency_ns =
+            entry_latencies_us[latency] * 1'000ULL;
+        if (
+            latency_ns >
+            std::numeric_limits<std::uint64_t>::max() -
+                landmark_time) {
+          throw std::overflow_error(
+              "price-spell round-trip entry deadline exceeds uint64 range");
+        }
+        const std::uint64_t entry_time =
+            landmark_time + latency_ns;
+        const bool arrived = entry_time < next_move_time;
+        std::size_t execution = landmark;
+        if (arrived) {
+          while (
+              execution + 1 < next_run &&
+              session.events[execution + 1].message.timestamp_ns <
+                  entry_time) {
+            ++execution;
+          }
+        }
+
+        for (std::size_t size = 0;
+             size < order_sizes.size();
+             ++size) {
+          std::optional<RoundTripOutcome> long_outcome;
+          std::optional<RoundTripOutcome> short_outcome;
+          if (arrived) {
+            const BookSnapshot& entry =
+                session.events[execution].book;
+            long_outcome = quoted_round_trip(
+                entry,
+                exit,
+                order_sizes[size],
+                1);
+            short_outcome = quoted_round_trip(
+                entry,
+                exit,
+                order_sizes[size],
+                -1);
+          }
+          auto accumulate = [&](std::size_t spread_index) {
+            RoundTripCount& count =
+                counts[latency][size][spread_index][cell];
+            accumulate_round_trip(
+                count,
+                direction,
+                arrived,
+                long_outcome,
+                short_outcome);
+          };
+          accumulate(0);
+          if (bucket == 1) {
+            accumulate(1);
+          }
+        }
+      }
+      run_start = next_run;
+    }
+
+    for (std::size_t latency = 0;
+         latency < entry_latencies_us.size();
+         ++latency) {
+      for (std::size_t size = 0;
+           size < order_sizes.size();
+           ++size) {
+        for (std::size_t bucket_index = 0;
+             bucket_index < round_trip_bucket_names.size();
+             ++bucket_index) {
+          for (std::size_t queue = 0; queue < bins; ++queue) {
+            for (std::size_t ofi = 0; ofi < bins; ++ofi) {
+              const RoundTripCount& count =
+                  counts[latency][size][bucket_index][
+                      queue * bins + ofi];
+              if (count.signals == 0) {
+                continue;
+              }
+              stream
+                  << session.date
+                  << ",price_spell_round_trips,"
+                  << round_trip_bucket_names[bucket_index] << ','
+                  << landmark_age_us << ','
+                  << entry_latencies_us[latency] << ','
+                  << order_sizes[size] << ',' << queue << ','
+                  << ofi << ',' << bin_center(queue, bins)
+                  << ',' << bin_center(ofi, bins) << ','
+                  << count.signals << ',' << count.arrived
+                  << ',' << count.signals - count.arrived
+                  << ',' << count.up_moves << ','
+                  << count.down_moves << ','
+                  << count.long_side.fills << ','
+                  << count.arrived - count.long_side.fills
+                  << ','
+                  << count.long_side.midpoint_move_sum_bps
+                  << ','
+                  << count.long_side.entry_cost_sum_bps << ','
+                  << count.long_side.exit_cost_sum_bps << ','
+                  << count.long_side.quoted_pnl_sum_bps << ','
+                  << count.short_side.fills << ','
+                  << count.arrived - count.short_side.fills
+                  << ','
+                  << count.short_side.midpoint_move_sum_bps
+                  << ','
+                  << count.short_side.entry_cost_sum_bps << ','
+                  << count.short_side.exit_cost_sum_bps << ','
+                  << count.short_side.quoted_pnl_sum_bps
+                  << '\n';
+            }
           }
         }
       }

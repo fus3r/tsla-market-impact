@@ -72,6 +72,7 @@ set(ORDER_FLOW_BINS "${OUTPUT_DIR}/order-flow-bins.csv")
 set(OFI_HORIZON_BINS "${OUTPUT_DIR}/ofi-horizon-bins.csv")
 set(MARKOUT_BINS "${OUTPUT_DIR}/markout-bins.csv")
 set(LANDMARK_BINS "${OUTPUT_DIR}/landmark-bins.csv")
+set(ROUND_TRIP_BINS "${OUTPUT_DIR}/round-trip-bins.csv")
 file(
   REMOVE
   "${BENCHMARK_JSON}"
@@ -80,6 +81,7 @@ file(
   "${OFI_HORIZON_BINS}"
   "${MARKOUT_BINS}"
   "${LANDMARK_BINS}"
+  "${ROUND_TRIP_BINS}"
 )
 execute_process(
   COMMAND
@@ -102,6 +104,8 @@ execute_process(
     --landmark-bins "${LANDMARK_BINS}"
     --landmark-age-us 1
     --landmark-latencies-us 0,1
+    --round-trip-bins "${ROUND_TRIP_BINS}"
+    --round-trip-sizes 1,70
     --machine "synthetic CTest fixture"
   RESULT_VARIABLE REPLAY_STATUS
   OUTPUT_VARIABLE REPLAY_STDOUT
@@ -212,6 +216,43 @@ if(
   message(
     FATAL_ERROR
     "landmark output does not match the one-signal-per-spell path"
+  )
+endif()
+
+file(READ "${ROUND_TRIP_BINS}" ROUND_TRIP_OUTPUT)
+string(
+  FIND
+  "${ROUND_TRIP_OUTPUT}"
+  "date,sample,spread_bucket,landmark_age_us,entry_latency_us,shares,queue_bin,ofi_bin,queue_center,ofi_center,signals,arrived,stale,up_moves,down_moves,long_fills,long_capacity_censored,long_midpoint_move_sum_bps,long_entry_cost_sum_bps,long_exit_cost_sum_bps,long_quoted_pnl_sum_bps,short_fills,short_capacity_censored,short_midpoint_move_sum_bps,short_entry_cost_sum_bps,short_exit_cost_sum_bps,short_quoted_pnl_sum_bps"
+  ROUND_TRIP_HEADER_POSITION
+)
+string(
+  FIND
+  "${ROUND_TRIP_OUTPUT}"
+  "2019-07-03,price_spell_round_trips,all_spreads,1,0,1,5,5,0,0,1,1,0,0,1,1,0,-49.7512437811,149.253731343,99.5024875622,-298.507462687,1,0,49.7512437811,149.253731343,99.5024875622,-199.004975124"
+  ROUND_TRIP_ONE_SHARE_POSITION
+)
+string(
+  FIND
+  "${ROUND_TRIP_OUTPUT}"
+  "2019-07-03,price_spell_round_trips,all_spreads,1,0,70,6,5,0.181818181818,0,2,2,0,1,1,0,2,0,0,0,0,1,1,-50,157.142857143,192.857142857,-400"
+  ROUND_TRIP_CAPACITY_POSITION
+)
+string(
+  FIND
+  "${ROUND_TRIP_OUTPUT}"
+  "2019-07-03,price_spell_round_trips,all_spreads,1,1,1,6,5,0.181818181818,0,2,0,2,1,1,0,0,0,0,0,0,0,0,0,0,0,0"
+  ROUND_TRIP_STALE_POSITION
+)
+if(
+  NOT ROUND_TRIP_HEADER_POSITION EQUAL 0
+  OR ROUND_TRIP_ONE_SHARE_POSITION EQUAL -1
+  OR ROUND_TRIP_CAPACITY_POSITION EQUAL -1
+  OR ROUND_TRIP_STALE_POSITION EQUAL -1
+)
+  message(
+    FATAL_ERROR
+    "round-trip output does not match the depth-constrained path"
   )
 endif()
 

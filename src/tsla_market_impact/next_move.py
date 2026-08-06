@@ -20,6 +20,31 @@ def compressed_binary_rows(
     return features[keep], targets[keep], weights[keep]
 
 
+def weighted_confidence_cutoff(
+    confidence: np.ndarray,
+    weights: np.ndarray,
+    target_fraction: float,
+) -> float:
+    """Return a train-weighted cutoff for a target upper confidence tail."""
+
+    if not 0 < target_fraction <= 1:
+        raise ValueError("target train signal fractions must lie in (0, 1]")
+    if target_fraction == 1:
+        return 0.0
+    order = np.argsort(confidence)
+    ordered_confidence = confidence[order]
+    ordered_weights = weights[order]
+    cumulative = np.cumsum(ordered_weights) - 0.5 * ordered_weights
+    cumulative /= ordered_weights.sum()
+    return float(
+        np.interp(
+            1 - target_fraction,
+            cumulative,
+            ordered_confidence,
+        )
+    )
+
+
 def weighted_binary_scores(
     targets: np.ndarray,
     probabilities: np.ndarray,

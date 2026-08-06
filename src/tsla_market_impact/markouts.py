@@ -14,6 +14,7 @@ from .next_move import (
     compressed_binary_rows,
     day_cluster_brier_comparison,
     weighted_binary_scores,
+    weighted_confidence_cutoff,
 )
 from .orderflow import MODEL_FEATURES
 from .plots import plot_marketable_markouts
@@ -81,29 +82,6 @@ def _validate_markout_bins(bins: pd.DataFrame) -> None:
         raise ValueError("markout sums must be finite")
     if (bins["half_spread_sum_bps"] < 0).any():
         raise ValueError("half-spread costs must be non-negative")
-
-
-def _weighted_cutoff(
-    confidence: np.ndarray,
-    weights: np.ndarray,
-    target_fraction: float,
-) -> float:
-    if not 0 < target_fraction <= 1:
-        raise ValueError("target train signal fractions must lie in (0, 1]")
-    if target_fraction == 1:
-        return 0.0
-    order = np.argsort(confidence)
-    ordered_confidence = confidence[order]
-    ordered_weights = weights[order]
-    cumulative = np.cumsum(ordered_weights) - 0.5 * ordered_weights
-    cumulative /= ordered_weights.sum()
-    return float(
-        np.interp(
-            1 - target_fraction,
-            cumulative,
-            ordered_confidence,
-        )
-    )
 
 
 def _cluster_markout(
@@ -243,7 +221,7 @@ def evaluate_marketable_markouts(
             train_weights = train_reference["signals"].to_numpy(dtype=float)
 
             for target_fraction in train_signal_fractions:
-                cutoff = _weighted_cutoff(
+                cutoff = weighted_confidence_cutoff(
                     train_confidence,
                     train_weights,
                     target_fraction,

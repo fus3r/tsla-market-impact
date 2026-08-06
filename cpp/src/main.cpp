@@ -27,6 +27,7 @@ struct Options {
   std::filesystem::path ofi_horizon_bins_output;
   std::filesystem::path markout_bins_output;
   std::filesystem::path landmark_bins_output;
+  std::filesystem::path round_trip_bins_output;
   int decode_runs{1};
   int replay_runs{7};
   int warmup_runs{1};
@@ -40,6 +41,7 @@ struct Options {
   std::uint64_t landmark_age_us{100};
   std::vector<std::uint64_t> landmark_latencies_us{
       0, 10, 100, 1'000, 10'000};
+  std::vector<std::uint64_t> round_trip_sizes{1, 100, 500};
   std::string machine;
 };
 
@@ -68,6 +70,9 @@ void print_usage(std::ostream& output) {
       << "  --landmark-age-us N      Positive signal age after spell start (default: 100)\n"
       << "  --landmark-latencies-us L Comma-separated post-signal latencies "
          "(default: 0,10,100,1000,10000)\n"
+      << "  --round-trip-bins PATH   Write depth-constrained landmark round trips\n"
+      << "  --round-trip-sizes L     Comma-separated share sizes "
+         "(default: 1,100,500)\n"
       << "  --machine TEXT           Machine label stored in the benchmark\n"
       << "  --help                   Show this help\n";
 }
@@ -211,6 +216,13 @@ Options parse_options(int argc, char** argv) {
       options.landmark_latencies_us = nonnegative_integer_list(
           require_value(argc, argv, index),
           "landmark latencies");
+    } else if (argument == "--round-trip-bins") {
+      options.round_trip_bins_output =
+          require_value(argc, argv, index);
+    } else if (argument == "--round-trip-sizes") {
+      options.round_trip_sizes = positive_integer_list(
+          require_value(argc, argv, index),
+          "round-trip sizes");
     } else if (argument == "--machine") {
       options.machine = require_value(argc, argv, index);
     } else {
@@ -362,6 +374,15 @@ int main(int argc, char** argv) {
           options.landmark_bins_output,
           options.landmark_age_us,
           options.landmark_latencies_us,
+          options.order_flow_grid);
+    }
+    if (!options.round_trip_bins_output.empty()) {
+      tsla_lob::write_price_spell_round_trip_bins(
+          dataset,
+          options.round_trip_bins_output,
+          options.landmark_age_us,
+          options.landmark_latencies_us,
+          options.round_trip_sizes,
           options.order_flow_grid);
     }
 

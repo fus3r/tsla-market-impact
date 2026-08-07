@@ -645,6 +645,70 @@ def plot_marketable_markouts(
     return output
 
 
+def plot_signal_stability(
+    folds: pd.DataFrame,
+    path: Path | str,
+) -> Path:
+    """Plot monthly rolling-origin Brier reductions for landmark signals."""
+
+    palette = _style()
+    panels = [
+        ("all_spreads", "All spreads"),
+        ("one_tick", "One-tick spread"),
+    ]
+    models = [
+        ("queue", "Queue imbalance", palette["blue"]),
+        ("ofi", "Cumulative OFI", palette["orange"]),
+        ("queue_and_ofi", "Queue + OFI", palette["green"]),
+    ]
+    figure, axes = plt.subplots(1, 2, figsize=(7.15, 3.25), layout="constrained")
+    for panel, (axis, (bucket, title)) in enumerate(
+        zip(axes, panels, strict=True)
+    ):
+        part = folds.loc[
+            folds["sample"].eq("price_spell_landmarks")
+            & folds["spread_bucket"].eq(bucket)
+        ]
+        months = (
+            part[["fold", "evaluation_month"]]
+            .drop_duplicates()
+            .sort_values("fold")
+        )
+        positions = np.arange(len(months))
+        for model, label, color in models:
+            scores = (
+                part.loc[part["model"].eq(model)]
+                .sort_values("fold")["relative_brier_reduction_vs_intercept"]
+                .to_numpy(dtype=float)
+            )
+            axis.plot(
+                positions,
+                100 * scores,
+                marker="o",
+                markersize=3.8,
+                linewidth=1.2,
+                color=color,
+                label=label,
+            )
+        axis.axhline(0, color=palette["line"], linewidth=0.9)
+        axis.set_xticks(
+            positions,
+            [
+                pd.Period(value, freq="M").strftime("%b")
+                for value in months["evaluation_month"]
+            ],
+        )
+        axis.set_title(f"({chr(97 + panel)})  {title}", loc="left")
+        axis.set_xlabel("2019 rolling-origin evaluation month")
+        axis.set_ylabel("Brier reduction vs prior-date frequency (%)")
+        _clean_axis(axis)
+    axes[0].legend(loc="best")
+    output = _prepare_path(path)
+    figure.savefig(output, bbox_inches="tight")
+    plt.close(figure)
+    return output
+
+
 def plot_price_spell_round_trips(
     metrics: pd.DataFrame,
     path: Path | str,

@@ -13,9 +13,11 @@ comparison then selects among fixed event- and clock-time OFI lookbacks without
 using the final dates. A marketable markout gate asks whether those direction
 scores survive the displayed spread and an explicit decision-to-entry delay. A
 second gate samples one fixed clock-time landmark per price spell so that
-candidate decisions no longer share a terminal price move. A depth-constrained
-stress test then crosses the displayed level-2 book at both entry and exit for
-three fixed order sizes.
+candidate decisions no longer share a terminal price move. A monthly
+rolling-origin audit tests whether that non-overlapping direction result
+depends on the fixed 198/51-date split. A depth-constrained stress test then
+crosses the displayed level-2 book at both entry and exit for three fixed
+order sizes.
 
 It does in this sample. The fixed test period begins on 18 October, after 198
 included training dates, and contains 51 dates with no trimming of the response.
@@ -110,6 +112,23 @@ executable exit, and fees, impact, fill uncertainty, inventory, capital, and
 risk limits remain absent. This filters short spells and changes the fitted
 confidence cutoff, so it is not a paired estimate of the state-level gate. The
 one-tick stratum remains exploratory on one stock-year.
+
+To test sensitivity to the fixed 198/51-date split, a separate rolling-origin
+audit trains on January through June, then refits on all preceding dates before
+scoring each month from July through December exactly once:
+
+| Landmark sample | Evaluation landmarks | ROC-AUC | Brier reduction | 5-day block interval | Positive months |
+|---|---:|---:|---:|---:|---:|
+| All spreads | 4,904,599 | 0.562 | 1.17% | [0.93%, 1.45%] | 6 / 6 |
+| One tick | 32,651 | 0.635 | 5.55% | [4.24%, 6.62%] | 6 / 6 |
+
+The paired circular bootstrap resamples consecutive trading-date losses and
+keeps the conclusion with 1-, 5-, and 10-date blocks. Relative to OFI alone,
+the combined model reduces Brier error by 0.54% [0.32%, 0.80%] across all
+spreads and 3.21% [1.67%, 4.51%] in the one-tick subset under the 5-date
+blocks. This audit was specified after the fixed-holdout results were known and
+reuses the same stock-year. It shows that the direction result is not confined
+to one terminal split; it is not an untouched replication or an economic test.
 
 The depth-constrained test replaces the terminal midpoint with the opposite
 marketable VWAP in the first snapshot after the next price change. Entry and
@@ -209,17 +228,19 @@ wire-to-wire trading latency.
   markout, price-spell landmark, and depth-constrained round-trip exporters, and the
   [finite-depth transition contract](cpp/README.md).
 - `src/tsla_market_impact/` contains the LOBSTER reconstruction, impact study,
-  chronological queue/OFI ablation, nested horizon selection, and
-  marketable-markout, price-spell landmark, and quoted round-trip analyses.
+  chronological queue/OFI ablation, nested horizon selection, rolling-origin
+  signal stability, and marketable-markout, price-spell landmark, and quoted
+  round-trip analyses.
 - `results/` contains aggregate tables, including the 252-row coverage audit
   and annual level-2 replay, benchmark, queue-model, order-flow, OFI-horizon,
-  markout, landmark, and round-trip results. Licensed rows are not included.
+  markout, landmark, rolling-origin, and round-trip results. Licensed rows are
+  not included.
 - `report/` contains the LaTeX source, figures, references, and compiled PDF.
 - `tests/` checks source integrity, data alignment, event-time windows,
-  chronological splits, complete-date bootstrap, queue and markout evaluation,
-  nested horizon selection, one-signal-per-spell deadlines, round-trip
-  accounting and capacity censoring, and scaling fits, plus a complete CLI run
-  on a hand-written redistributable session.
+  chronological splits, complete-date and circular-block resampling, queue and
+  markout evaluation, nested horizon selection, one-signal-per-spell deadlines,
+  round-trip accounting and capacity censoring, and scaling fits, plus a
+  complete CLI run on a hand-written redistributable session.
 
 ## Data
 
@@ -391,6 +412,17 @@ tsla-impact analyze-landmarks \
 The licensed-data-derived landmark grid remains local. The committed 300-row
 metric table, model metadata, and vector figure contain aggregate evidence
 only.
+
+Audit the fixed landmark signal under monthly expanding origins:
+
+```bash
+tsla-impact analyze-signal-stability \
+  --bins data/processed/price-spell-landmark-bins-31.csv
+```
+
+The same local landmark grid feeds this audit. The committed 48 monthly model
+rows, 8 overall model rows, 24 paired block comparisons, protocol metadata,
+and vector figure contain aggregate evidence only.
 
 Apply the same train-defined rules to displayed level-2 entry and exit VWAPs:
 

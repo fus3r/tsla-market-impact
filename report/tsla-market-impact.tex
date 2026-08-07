@@ -110,8 +110,12 @@ corresponding all-spread immediate markout is \MarkoutAllZeroNet{}. A fixed
 100-microsecond landmark then permits at most one signal per price spell. Its
 one-tick net markout falls from \LandmarkOneTickZeroNet{} immediately to
 \LandmarkOneTickTenNet{} after 10 microseconds and
-\LandmarkOneTickHundredNet{} after 100 microseconds. A depth-constrained gate
-then crosses the displayed book again at the next price move. The one-share,
+\LandmarkOneTickHundredNet{} after 100 microseconds. In a monthly rolling-origin
+audit of those non-overlapping landmarks, the combined model reduces Brier
+error by \RollingAllBrierReduction{} across all spreads and
+\RollingOneTickBrierReduction{} at one tick over the final six calendar
+months, with positive reductions in every month. A depth-constrained gate then
+crosses the displayed book again at the next price move. The one-share,
 one-tick quoted round trip is \RoundTripOneOnePnl{} basis points
 $[\RoundTripOneOneLower{},\,\RoundTripOneOneUpper{}]$ before fees.
 
@@ -138,8 +142,8 @@ the study does not claim complete 2019 coverage or external replication.
 \vspace{0.5em}
 \textbf{Keywords:} market impact, marketable markout, quoted round trip,
 price-spell landmark, queue imbalance, order-flow imbalance, market
-microstructure, chronological validation, order-book replay, finite-size
-scaling
+microstructure, chronological validation, rolling-origin evaluation,
+order-book replay, finite-size scaling
 
 \section{Question}
 
@@ -951,6 +955,78 @@ backtest: the terminal midpoint is a mark rather than an executable exit, and
 fees, impact, fill uncertainty, inventory, capital, and risk limits remain
 absent.
 
+\subsection{Rolling-origin stability of the landmark signal}
+
+The preceding direction result still depends on one 198/51-date origin. I
+therefore add a split-sensitivity audit following the rolling-origin principle
+described by \citet{tashman2000}. January through June form the initial
+estimation period. At the start of each month from July through December, the
+same intercept, queue, OFI, and combined specifications are refit on every
+preceding date; that month's landmarks are then scored once. No later date
+enters an earlier fit, and no model or feature is selected from the six
+evaluation months.
+
+For model $k$, let $L_{d,k}$ be the aggregate Brier loss on date $d$, calculated
+directly from the up- and down-move counts in each fixed signal cell. The
+six-month comparison with reference model $0$ is
+\begin{equation}
+  \Delta_{k,0}
+    = 1-\frac{\sum_d L_{d,k}}{\sum_d L_{d,0}}.
+\end{equation}
+The primary comparison is the combined model against the prior-date up-move
+frequency across all spreads. To retain short-range dependence between trading
+dates, I resample the paired daily loss sequences with the circular-block
+procedure of \citet{politis1992}. The reported interval uses five-date blocks
+and 10,000 draws; one- and ten-date blocks are retained as sensitivity checks.
+
+\begin{table}[H]
+  \centering
+  \caption{Monthly rolling-origin direction audit on the non-overlapping
+  landmarks. Each row combines \RollingEvaluationDates{} dates from July
+  through December. Intervals use paired circular blocks of five consecutive
+  trading dates.}
+  \label{tab:rolling-landmarks}
+  \small
+  \begin{tabular}{lrrrr}
+    \toprule
+    Spread & Landmarks & ROC-AUC & Brier reduction [95\%] & Positive months \\
+    \midrule
+    All & \RollingAllObservations{} & \RollingAllAuc{} &
+      \RollingAllBrierReduction{} [\RollingAllBrierLower{},
+      \RollingAllBrierUpper{}] & 6 / 6 \\
+    One tick & \RollingOneTickObservations{} & \RollingOneTickAuc{} &
+      \RollingOneTickBrierReduction{} [\RollingOneTickBrierLower{},
+      \RollingOneTickBrierUpper{}] & 6 / 6 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The combined reduction is positive in every month for both samples. Relative
+to OFI alone, it is \RollingAllVsOfi{}
+$[\RollingAllVsOfiLower{},\,\RollingAllVsOfiUpper{}]$ across all spreads and
+\RollingOneTickVsOfi{}
+$[\RollingOneTickVsOfiLower{},\,\RollingOneTickVsOfiUpper{}]$ in the exploratory
+one-tick subset. That secondary comparison is positive in six of six pooled
+months and five of six one-tick months. Expanding the circular blocks to ten
+dates leaves lower bounds of \RollingAllTenDayLower{} and
+\RollingOneTickTenDayLower{} against the frequency benchmark.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/price-spell-signal-stability.pdf}
+  \caption{Monthly rolling-origin Brier reductions at the fixed price-spell
+  landmark. Each model is refit only on dates preceding the displayed month.
+  The one-tick sample remains exploratory.}
+  \label{fig:rolling-landmarks}
+\end{figure}
+
+This is not a second untouched holdout. The protocol was specified after the
+fixed 198/51 result was inspected, and a month enters the expanding training
+set after it has been scored. The audit shows that the direction result is not
+confined to one terminal split and is not erased by one- or two-week loss
+blocks. It does not account for feature-search history, replace validation on
+another stock-year, or alter the negative quoted-execution conclusion below.
+
 \subsection{Depth-constrained quoted round trips}
 
 I next replace the terminal midpoint with a second marketable order. This is a
@@ -1145,6 +1221,12 @@ this included TSLA sample in-sample; the cross-asset claim in
   establishes a new mid-price and can cross spell boundaries. It therefore
   does not isolate horizon length from reset semantics or exhaust all causal
   OFI summaries.
+  \item The rolling-origin audit reduces dependence on one terminal split but
+  was specified after that split was inspected and reuses the same stock-year.
+  Its circular-block intervals condition on the fitted forecast sequence and
+  probe only three block lengths; they do not account for feature-search
+  history, nonstationarity across years, or model-estimation uncertainty in a
+  new market regime.
   \item The two midpoint-markout gates assume a one-unit fill at the displayed
   best and do not provide an executable exit. The round-trip extension instead
   walks the displayed level-2 book, but assumes that liquidity is
@@ -1188,12 +1270,12 @@ finite-depth transitions, and exports daily queue, joint queue/OFI,
 multi-horizon OFI, state-level markout, price-spell landmark, and
 depth-constrained round-trip bins. The figures are vector PDFs. Synthetic tests
 cover file pairing, source coverage, half-day filtering, book alignment, day
-boundaries, fixed chronological splits, complete-date resampling, queue/OFI
-ablation, nested train-only horizon selection, markout accounting,
-non-overlapping price-spell landmarks, round-trip capacity censoring, grid
-robustness, and the scaling regressions. Reproducing the annual transaction
-tables, replay, and aggregate grids requires licensed LOBSTER files, which are
-not tracked.
+boundaries, fixed chronological splits, complete-date and circular-block
+resampling, queue/OFI ablation, nested train-only horizon selection, monthly
+rolling-origin refits, markout accounting, non-overlapping price-spell
+landmarks, round-trip capacity censoring, grid robustness, and the scaling
+regressions. Reproducing the annual transaction tables, replay, and aggregate
+grids requires licensed LOBSTER files, which are not tracked.
 
 The course presentation lists L. Cohen, R. Darwish, A. Pariente, H. Rohrbach,
 and R. Sithisak. Anastasia Bugaenko supervised the work. I wrote this standalone
@@ -1235,7 +1317,12 @@ detectable advantage by 1 millisecond.
 At the fixed 100-microsecond landmark, each eligible price spell contributes at
 most one signal. The combined one-tick model reaches ROC-AUC
 \LandmarkOneTickAuc{} and a \LandmarkOneTickBrierReduction{} Brier reduction,
-but its 10-percent-target net markout falls to
+while the rolling-origin audit records positive combined-model Brier reductions
+in all six later months. Its five-date block intervals are
+$[\RollingAllBrierLower{},\,\RollingAllBrierUpper{}]$ across all spreads and
+$[\RollingOneTickBrierLower{},\,\RollingOneTickBrierUpper{}]$ for one-tick
+states. This supports split stability within TSLA 2019, not generalization to a
+new year. The 10-percent-target net markout still falls to
 \LandmarkOneTickZeroNet{} basis points immediately,
 \LandmarkOneTickTenNet{} after 10 microseconds, and
 \LandmarkOneTickHundredNet{} after 100 microseconds. The pooled result remains

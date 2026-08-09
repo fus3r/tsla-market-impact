@@ -59,6 +59,15 @@ def test_combined_order_flow_model_uses_later_dates_and_both_signals() -> None:
         "queue_and_ofi",
     }
     assert result["protocol"]["test_dates"] == 6
+    assert result["metric_rows"] == len(metrics)
+    assert result["comparison_rows"] == len(comparisons)
+    assert result["calibration_rows"] == len(calibration)
+    assert set(result) == {
+        "protocol",
+        "metric_rows",
+        "comparison_rows",
+        "calibration_rows",
+    }
 
 
 def test_grid_robustness_keeps_each_resolution_explicit() -> None:

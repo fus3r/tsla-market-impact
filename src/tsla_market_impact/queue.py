@@ -155,7 +155,8 @@ def evaluate_queue_imbalance(
             "feature": "level-1 queue imbalance after the current event",
             "bootstrap_unit": "trading date",
         },
-        "models": metrics.to_dict(orient="records"),
+        "metric_rows": int(len(metrics)),
+        "calibration_rows": int(len(calibration)),
     }
     return metrics, calibration, result
 

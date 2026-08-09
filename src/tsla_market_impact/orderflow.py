@@ -291,8 +291,9 @@ def evaluate_order_flow_signals(
             ),
             "bootstrap_unit": "trading date",
         },
-        "models": json.loads(metrics.to_json(orient="records")),
-        "comparisons": json.loads(comparisons.to_json(orient="records")),
+        "metric_rows": int(len(metrics)),
+        "comparison_rows": int(len(comparisons)),
+        "calibration_rows": int(len(calibration)),
     }
     return metrics, comparisons, calibration, result
 

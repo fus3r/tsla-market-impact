@@ -59,6 +59,9 @@ def test_horizon_selection_never_uses_final_dates() -> None:
     assert result["protocol"]["development_dates"] == 24
     assert result["protocol"]["selection_dates"] == 8
     assert result["protocol"]["test_dates"] == 8
+    assert result["metric_rows"] == len(metrics)
+    assert result["selection_rows"] == len(selection)
+    assert set(result) == {"protocol", "metric_rows", "selection_rows"}
     assert combined["selected_fixed_horizon_kind"] == "quote_updates"
     assert combined["selected_fixed_horizon_value"] == 5
     assert combined["versus_price_spell_relative_brier_reduction"] < 0

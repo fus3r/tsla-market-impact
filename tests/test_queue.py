@@ -30,7 +30,7 @@ def _queue_bins() -> pd.DataFrame:
 
 
 def test_queue_model_uses_fixed_later_date_holdout() -> None:
-    metrics, _, result = evaluate_queue_imbalance(
+    metrics, calibration, result = evaluate_queue_imbalance(
         _queue_bins(),
         test_start_date="2019-01-17",
         bootstrap_replicates=200,
@@ -46,3 +46,6 @@ def test_queue_model_uses_fixed_later_date_holdout() -> None:
     assert row["clusters"] == 4
     assert result["protocol"]["train_dates"] == 16
     assert result["protocol"]["test_dates"] == 4
+    assert result["metric_rows"] == len(metrics)
+    assert result["calibration_rows"] == len(calibration)
+    assert set(result) == {"protocol", "metric_rows", "calibration_rows"}

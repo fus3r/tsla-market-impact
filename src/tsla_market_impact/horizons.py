@@ -554,8 +554,8 @@ def evaluate_ofi_horizons(
             "bootstrap_unit": "trading date",
             "bootstrap_replicates": int(bootstrap_replicates),
         },
-        "candidates": json.loads(metrics.to_json(orient="records")),
-        "selections": json.loads(selection.to_json(orient="records")),
+        "metric_rows": int(len(metrics)),
+        "selection_rows": int(len(selection)),
     }
     return metrics, selection, result
 

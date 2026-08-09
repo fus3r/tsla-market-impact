@@ -399,9 +399,9 @@ def evaluate_signal_stability(
                 "not an untouched confirmation or an execution study"
             ),
         },
-        "overall_metrics": json.loads(overall.to_json(orient="records")),
-        "monthly_metrics": json.loads(folds.to_json(orient="records")),
-        "comparisons": json.loads(comparisons.to_json(orient="records")),
+        "fold_rows": int(len(folds)),
+        "metric_rows": int(len(overall)),
+        "comparison_rows": int(len(comparisons)),
     }
     return folds, overall, comparisons, result
 

@@ -54,6 +54,15 @@ def test_monthly_origins_use_only_preceding_landmark_dates() -> None:
         "2019-07",
         "2019-08",
     ]
+    assert result["fold_rows"] == len(folds)
+    assert result["metric_rows"] == len(overall)
+    assert result["comparison_rows"] == len(comparisons)
+    assert set(result) == {
+        "protocol",
+        "fold_rows",
+        "metric_rows",
+        "comparison_rows",
+    }
     origins = folds[["fold", "train_last_date", "test_first_date"]].drop_duplicates()
     assert (origins["train_last_date"] < origins["test_first_date"]).all()
     assert set(folds["model"]) == {"intercept", "queue", "ofi", "queue_and_ofi"}

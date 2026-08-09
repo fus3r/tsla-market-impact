@@ -54,6 +54,8 @@ def test_markouts_use_fixed_later_dates_and_date_cluster_accounting() -> None:
 
     assert result["protocol"]["train_dates"] == 3
     assert result["protocol"]["test_dates"] == 2
+    assert result["metric_rows"] == len(metrics)
+    assert set(result) == {"protocol", "metric_rows"}
     assert immediate["train_last_date"] == "2019-01-04"
     assert immediate["test_first_date"] == "2019-01-07"
     assert immediate["selected_test_signals"] == 400
@@ -103,6 +105,8 @@ def test_price_spell_landmarks_use_one_pre_specified_clock_time() -> None:
     assert "at most one signal" in result["protocol"]["nonoverlap"]
     assert "executable exit" in result["protocol"]["interpretation_warning"]
     assert "overlap_warning" not in result["protocol"]
+    assert result["metric_rows"] == len(metrics)
+    assert set(result) == {"protocol", "metric_rows"}
 
     bins.loc[0, "landmark_age_us"] = 200
     with pytest.raises(ValueError, match="one positive landmark age"):

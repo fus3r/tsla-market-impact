@@ -360,7 +360,7 @@ def evaluate_marketable_markouts(
                 "strategy returns"
             ),
         },
-        "models": json.loads(metrics.to_json(orient="records")),
+        "metric_rows": int(len(metrics)),
     }
     return metrics, result
 

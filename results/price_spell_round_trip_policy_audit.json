@@ -1,0 +1,37 @@
+{
+  "protocol": {
+    "family_policies": 360,
+    "filled_policies": 357,
+    "estimable_policies": 356,
+    "zero_fill_policies": 3,
+    "unstudentized_filled_policies": 1,
+    "test_dates": 51,
+    "test_first_date": "2019-10-18",
+    "test_last_date": "2019-12-31",
+    "bootstrap_replicates": 10000,
+    "random_state": 42,
+    "simultaneous_coverage": 0.95,
+    "critical_value": 3.025689435750935,
+    "method": "two-sided studentized Rademacher multiplier intervals for ratio-of-sums estimates clustered by trading date",
+    "selection_rule": "highest observed zero-fee quoted PnL across the complete spread, model, confidence, latency, and size grid"
+  },
+  "best_observed_policy": {
+    "spread_bucket": "one_tick",
+    "model": "ofi",
+    "target_train_signal_fraction": 0.05,
+    "entry_latency_us": 0,
+    "shares": 1,
+    "filled_round_trips": 565,
+    "filled_test_dates": 51,
+    "quoted_round_trip_mean_bps": -0.6145385556843593,
+    "pointwise_lower_95_bps": -0.6815542143844019,
+    "pointwise_upper_95_bps": -0.561155284510917,
+    "simultaneous_lower_95_bps": -0.7092478553173035,
+    "simultaneous_upper_95_bps": -0.5198292560514152,
+    "familywise_adjusted_p_value": 9.999000099990002e-05,
+    "inference_status": "estimable"
+  },
+  "best_observed_upper_below_zero": true,
+  "estimable_policies_with_upper_below_zero": 332,
+  "all_estimable_upper_below_zero": false
+}

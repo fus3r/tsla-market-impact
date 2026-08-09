@@ -786,6 +786,94 @@ def plot_price_spell_round_trips(
     return output
 
 
+def plot_round_trip_policy_audit(
+    audit: pd.DataFrame,
+    path: Path | str,
+    policies: int = 12,
+) -> Path:
+    """Plot pointwise and simultaneous intervals for the best observed policies."""
+
+    palette = _style()
+    selected = (
+        audit.loc[audit["inference_status"].eq("estimable")]
+        .nlargest(policies, "quoted_round_trip_mean_bps")
+        .sort_values("quoted_round_trip_mean_bps")
+    )
+    if selected.empty:
+        raise ValueError("policy audit contains no estimable policies")
+
+    model_labels = {
+        "queue": "Queue",
+        "ofi": "OFI",
+        "queue_and_ofi": "Queue + OFI",
+    }
+
+    def policy_label(row: pd.Series) -> str:
+        spread = "All" if row["spread_bucket"] == "all_spreads" else "1 tick"
+        latency = int(row["entry_latency_us"])
+        latency_label = (
+            "0 us"
+            if latency == 0
+            else f"{latency} us"
+            if latency < 1_000
+            else f"{latency // 1_000} ms"
+        )
+        target = int(round(100 * float(row["target_train_signal_fraction"])))
+        return (
+            f"{spread} | {model_labels[str(row['model'])]} | "
+            f"{target}% | {latency_label} | {int(row['shares']):,} sh"
+        )
+
+    position = np.arange(len(selected))
+    point = selected["quoted_round_trip_mean_bps"].to_numpy(dtype=float)
+    pointwise_lower = selected["pointwise_lower_95_bps"].to_numpy(dtype=float)
+    pointwise_upper = selected["pointwise_upper_95_bps"].to_numpy(dtype=float)
+    simultaneous_lower = selected["simultaneous_lower_95_bps"].to_numpy(dtype=float)
+    simultaneous_upper = selected["simultaneous_upper_95_bps"].to_numpy(dtype=float)
+
+    figure, axis = plt.subplots(
+        figsize=(7.15, 4.5),
+        layout="constrained",
+    )
+    axis.hlines(
+        position,
+        simultaneous_lower,
+        simultaneous_upper,
+        color=palette["orange"],
+        linewidth=2.2,
+        label="Simultaneous 95% interval",
+    )
+    axis.hlines(
+        position,
+        pointwise_lower,
+        pointwise_upper,
+        color=palette["blue"],
+        linewidth=1.1,
+        label="Pointwise 95% interval",
+    )
+    axis.scatter(
+        point,
+        position,
+        color=palette["ink"],
+        s=15,
+        zorder=3,
+        label="Observed mean",
+    )
+    axis.axvline(0, color=palette["line"], linewidth=0.9)
+    axis.set_yticks(position, [policy_label(row) for _, row in selected.iterrows()])
+    axis.set_xlabel("Zero-fee quoted round-trip PnL (bp)")
+    axis.set_title(
+        "Best observed policies after family-wide adjustment",
+        loc="left",
+    )
+    axis.legend(loc="lower right")
+    _clean_axis(axis)
+    output = _prepare_path(path)
+    figure.savefig(output, bbox_inches="tight")
+    plt.close(figure)
+    return output
+
+
 def plot_scaling_collapse(
     collapsed: pd.DataFrame,
     shape: dict[str, float],

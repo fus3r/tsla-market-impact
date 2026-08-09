@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from tsla_market_impact.policy_audit import evaluate_round_trip_policy_family
 from tsla_market_impact.round_trips import evaluate_price_spell_round_trips
 
 
@@ -95,3 +96,55 @@ def test_round_trip_analysis_rejects_one_share_capacity_censoring():
 
     with pytest.raises(ValueError, match="one-share round trips"):
         evaluate_price_spell_round_trips(bins)
+
+
+def test_policy_audit_reconstructs_the_complete_grid_and_adjusts_selection():
+    bins = _round_trip_bins()
+    date_index = bins["date"].map(
+        {date: index for index, date in enumerate(sorted(bins["date"].unique()))}
+    )
+    extra_exit_cost = 0.002 * date_index
+    for side in ("long", "short"):
+        fills = bins[f"{side}_fills"]
+        bins[f"{side}_exit_cost_sum_bps"] += fills * extra_exit_cost
+        bins[f"{side}_quoted_pnl_sum_bps"] -= fills * extra_exit_cost
+
+    metrics, _ = evaluate_price_spell_round_trips(
+        bins,
+        test_date_fraction=0.40,
+        train_signal_fractions=(1.0,),
+        bootstrap_replicates=200,
+        random_state=7,
+    )
+    metrics["confidence_cutoff"] = metrics["confidence_cutoff"].map(
+        lambda cutoff: np.nextafter(cutoff, np.inf)
+    )
+    audit, result = evaluate_round_trip_policy_family(
+        bins,
+        metrics,
+        bootstrap_replicates=500,
+        random_state=7,
+    )
+
+    assert len(audit) == 12
+    assert result["protocol"]["family_policies"] == 12
+    assert result["protocol"]["estimable_policies"] == 12
+    assert np.allclose(
+        audit["quoted_round_trip_mean_bps"],
+        metrics.sort_values(
+            [
+                "sample",
+                "spread_bucket",
+                "model",
+                "target_train_signal_fraction",
+                "entry_latency_us",
+                "shares",
+            ]
+        )["quoted_round_trip_mean_bps"],
+    )
+    assert (audit["simultaneous_upper_95_bps"] > audit["quoted_round_trip_mean_bps"]).all()
+    best = audit.loc[audit["quoted_round_trip_mean_bps"].idxmax()]
+    assert np.isclose(
+        result["best_observed_policy"]["quoted_round_trip_mean_bps"],
+        best["quoted_round_trip_mean_bps"],
+    )

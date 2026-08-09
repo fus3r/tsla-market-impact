@@ -17,7 +17,8 @@ candidate decisions no longer share a terminal price move. A monthly
 rolling-origin audit tests whether that non-overlapping direction result
 depends on the fixed 198/51-date split. A depth-constrained stress test then
 crosses the displayed level-2 book at both entry and exit for three fixed
-order sizes.
+order sizes. A simultaneous policy audit then corrects the full execution grid
+for selection after inspection.
 
 It does in this sample. The fixed test period begins on 18 October, after 198
 included training dates, and contains 51 dates with no trimming of the response.
@@ -152,6 +153,19 @@ inventory, capital, and risk limits are absent. The protocol was specified
 after the midpoint result was inspected, so it is a stress test rather than a
 new untouched validation, backtest, or deployable return estimate.
 
+Inspecting 360 spread, model, confidence, latency, and size configurations
+creates a separate selection risk. A studentized Rademacher multiplier
+bootstrap therefore clusters the final-period outcomes by 51 complete trading
+dates and covers the 356 estimable policies simultaneously. Three policies
+have no fill and one 500-share tail fills on only one date, so they are retained
+but not studentized. The best observed configuration across the complete grid
+is the one-tick OFI model at 5% target coverage, zero latency, and one share:
+565 fills average -0.615 bp. Its pointwise interval is [-0.682, -0.561] bp and
+its selection-adjusted simultaneous interval is [-0.709, -0.520] bp
+(`p_adj < 0.0001`). This protects the negative conclusion for the test-set
+winner; it does not make the grid an untouched strategy search or establish
+that every sparse policy has a negative upper bound.
+
 The scaling analysis is separate. It applies the curve-collapse construction of
 Patzelt and Bouchaud to this included TSLA 2019 sample. The reported values
 0.9958 and 0.9975 are in-sample fits of estimated scale parameters, not
@@ -230,17 +244,19 @@ wire-to-wire trading latency.
 - `src/tsla_market_impact/` contains the LOBSTER reconstruction, impact study,
   chronological queue/OFI ablation, nested horizon selection, rolling-origin
   signal stability, and marketable-markout, price-spell landmark, and quoted
-  round-trip analyses.
+  round-trip analyses, including selection-aware simultaneous inference over
+  the round-trip policy family.
 - `results/` contains aggregate tables, including the 252-row coverage audit
   and annual level-2 replay, benchmark, queue-model, order-flow, OFI-horizon,
-  markout, landmark, rolling-origin, and round-trip results. Licensed rows are
-  not included.
+  markout, landmark, rolling-origin, round-trip, and simultaneous-policy results.
+  Licensed rows are not included.
 - `report/` contains the LaTeX source, figures, references, and compiled PDF.
 - `tests/` checks source integrity, data alignment, event-time windows,
   chronological splits, complete-date and circular-block resampling, queue and
   markout evaluation, nested horizon selection, one-signal-per-spell deadlines,
-  round-trip accounting and capacity censoring, and scaling fits, plus a
-  complete CLI run on a hand-written redistributable session.
+  round-trip accounting, capacity censoring, simultaneous policy inference, and
+  scaling fits, plus a complete CLI run on a hand-written redistributable
+  session.
 
 ## Data
 
@@ -434,6 +450,18 @@ tsla-impact analyze-round-trips \
 The 2,509,350-cell licensed-data-derived grid remains local. The committed
 360-row metric table, model metadata, and vector figure retain every policy,
 including zero-fill scenarios.
+
+Audit the complete grid with common date-clustered multiplier draws:
+
+```bash
+tsla-impact audit-round-trip-policies \
+  --bins data/processed/price-spell-round-trip-bins-31.csv \
+  --metrics results/price_spell_round_trip_metrics.csv
+```
+
+The command first reconstructs every stored policy total, then writes a
+360-row audit, protocol JSON, and vector figure. The three zero-fill rows and
+the one single-date row remain explicit without artificial intervals.
 
 ## Origin and credit
 

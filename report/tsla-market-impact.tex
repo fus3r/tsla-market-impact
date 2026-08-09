@@ -117,7 +117,11 @@ error by \RollingAllBrierReduction{} across all spreads and
 months, with positive reductions in every month. A depth-constrained gate then
 crosses the displayed book again at the next price move. The one-share,
 one-tick quoted round trip is \RoundTripOneOnePnl{} basis points
-$[\RoundTripOneOneLower{},\,\RoundTripOneOneUpper{}]$ before fees.
+$[\RoundTripOneOneLower{},\,\RoundTripOneOneUpper{}]$ before fees. Across the
+full \PolicyFamilyRows{}-policy grid, the best observed quoted result remains
+negative at \PolicyBestPnl{} basis points, with a selection-adjusted
+simultaneous interval
+$[\PolicyBestSimLower{},\,\PolicyBestSimUpper{}]$.
 
 I also apply the finite-size scaling construction of \citet{patzelt2018} to the
 same stock-year. The width and height scale regressions have in-sample \Rtwo{}
@@ -1111,6 +1115,49 @@ trips remain. These are not capacity estimates for a strategy. The committed
 360-row grid retains every specified scenario, including the three without a
 fill; their economic fields remain null.
 
+\subsubsection{Selection-aware policy-family audit}
+
+The complete output crosses spread sample, direction model, training-confidence
+target, entry latency, and order size into \PolicyFamilyRows{} policies.
+Choosing the least negative row after viewing that grid invalidates its
+pointwise interval. The audit therefore reconstructs each policy from the
+aggregate cells and stored train-only parameters and stops unless its selected,
+arrived, filled, and quoted-PnL totals match exactly.
+
+For policy $j$ and test date $d$, let $P_{dj}$ be aggregate quoted PnL and
+$F_{dj}$ its fill count. The ratio estimate is
+$\widehat{\mu}_j=\sum_d P_{dj}/\sum_d F_{dj}$, with influence numerator
+$P_{dj}-\widehat{\mu}_jF_{dj}$. Ten thousand common Rademacher multiplier draws
+over the 51 dates preserve cross-policy dependence; their maximum absolute
+studentized statistic forms simultaneous 95 percent intervals
+\citep{chernozhukov2013}, with critical value \PolicyCriticalValue{}.
+\PolicyFilledRows{} policies fill; \PolicyEstimableRows{} fill on at least two
+dates with nonzero cluster variance. Three zero-fill policies and one
+single-date policy remain explicit without artificial intervals.
+
+The test-set winner across all \PolicyFamilyRows{} rows is the one-tick OFI
+model at 5 percent target coverage, zero latency, and one share. Its
+\PolicyBestFills{} fills span all 51 dates and average \PolicyBestPnl{} basis
+points. Its pointwise interval is
+$[\PolicyBestPointLower{},\,\PolicyBestPointUpper{}]$ and its family-wide
+interval is $[\PolicyBestSimLower{},\,\PolicyBestSimUpper{}]$, with
+$p_{\mathrm{adj}}<\PolicyBestAdjustedP{}$.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{figures/price-spell-round-trip-policy-audit.pdf}
+  \caption{Pointwise and simultaneous intervals for the twelve highest
+  observed quoted-PnL policies. Ranking uses the final dates; the orange
+  intervals share one multiplier distribution over all \PolicyEstimableRows{}
+  estimable policies.}
+  \label{fig:policy-audit}
+\end{figure}
+
+\PolicyNegativeUpperRows{} of \PolicyEstimableRows{} simultaneous upper bounds
+are below zero. Sparse, mainly large-size tails prevent a claim that every
+policy is negative. The selection-valid conclusion is narrower: the best
+observed configuration remains negative under this quoted execution protocol.
+
 The diagnostic is deliberately optimistic in other respects. Exit uses the
 first snapshot after the next price move with zero reaction latency, displayed
 size is assumed simultaneously available to the hypothetical order, and no fee
@@ -1235,10 +1282,11 @@ this included TSLA sample in-sample; the cross-asset claim in
   limits remain absent. The stated entry latency is one exogenous delay applied
   to LOBSTER event time; it does not identify components of an implementable
   system.
-  \item Markout confidence, latency, spread, and model comparisons are
-  exploratory and receive no family-wise multiple-testing correction. The
-  complete-date bootstrap addresses within-day dependence but not protocol
-  selection.
+  \item The earlier state-level and midpoint-markout grids remain exploratory
+  and receive no family-wise correction. The quoted round-trip audit provides
+  simultaneous coverage for 356 estimable members of its 360-policy family,
+  but it was added after the midpoint result and does not account for the
+  broader feature and protocol research process.
   \item The one-tick spread stratification is exploratory. Its stronger result
   is not evidence of generalization beyond this stock-year.
   \item The joint logistic models use fixed binned features rather than raw
@@ -1273,9 +1321,10 @@ cover file pairing, source coverage, half-day filtering, book alignment, day
 boundaries, fixed chronological splits, complete-date and circular-block
 resampling, queue/OFI ablation, nested train-only horizon selection, monthly
 rolling-origin refits, markout accounting, non-overlapping price-spell
-landmarks, round-trip capacity censoring, grid robustness, and the scaling
-regressions. Reproducing the annual transaction tables, replay, and aggregate
-grids requires licensed LOBSTER files, which are not tracked.
+landmarks, round-trip capacity censoring, simultaneous policy inference, grid
+robustness, and the scaling regressions. Reproducing the annual transaction
+tables, replay, and aggregate grids requires licensed LOBSTER files, which are
+not tracked.
 
 The course presentation lists L. Cohen, R. Darwish, A. Pariente, H. Rohrbach,
 and R. Sithisak. Anastasia Bugaenko supervised the work. I wrote this standalone
@@ -1290,61 +1339,40 @@ nonlinear volume model moves \Rtwo{} from \VolumeRtwo{} to \RawCountRtwo{} and
 reduces MSE by \MseReduction{}, with a date-bootstrap interval of
 [\BootstrapMseLower{}, \BootstrapMseUpper{}]. The full count-transform model's
 \TotalMseReduction{} reduction relative to linear signed volume is a broader
-ablation gap and is not attributed to count alone. The incremental ordering is
-stable across the time and horizon checks reported above.
+ablation gap and is not attributed to count alone.
 
 The finite-depth engine audits \ReplayEvents{} included events without claiming
-unobservable FIFO state and replays the resident sample at
-\ReplayThroughput{} million events/s on the stated machine. Causal OFI is more
-informative than the static queue state across all spreads: the combined model
-reaches ROC-AUC \CombinedAllAuc{} and reduces Brier score by
-\CombinedAllBrierReduction{} on later dates. Queue and OFI complement each
-other in the exploratory one-tick subset, where the combined ROC-AUC is
-\CombinedOneTickAuc{}. A nested horizon ablation rejects the simple alternative
-that a fixed OFI lookback improves this result: the selected fixed windows have
-\OfiFixedAllPenalty{} more Brier error across all spreads and
-\OfiFixedOneTickPenalty{} more in the one-tick subset than the adaptive reset.
+unobservable FIFO state. On later dates, causal OFI reduces pooled Brier score
+by \CombinedAllBrierReduction{}, while queue and OFI reach ROC-AUC
+\CombinedOneTickAuc{} in the exploratory one-tick subset. The selected fixed
+lookbacks have \OfiFixedAllPenalty{} and \OfiFixedOneTickPenalty{} more Brier
+error than the adaptive reset in the pooled and one-tick samples.
 
-The execution-cost gate changes the interpretation. The pooled direction score
-does not cover the displayed spread even at zero latency. The exploratory
-one-tick 10-percent confidence tail has an immediate net markout of
-\MarkoutOneTickZeroNet{} basis points and remains positive at 10 microseconds,
-but its 100-microsecond interval crosses zero and \MarkoutOneTickHundredStale{}
-of candidate states are stale. The 5-percent tail survives 100 microseconds on
-only \MarkoutTailHundredExecutable{} executable test states, then loses a
-detectable advantage by 1 millisecond.
-
-At the fixed 100-microsecond landmark, each eligible price spell contributes at
-most one signal. The combined one-tick model reaches ROC-AUC
-\LandmarkOneTickAuc{} and a \LandmarkOneTickBrierReduction{} Brier reduction,
-while the rolling-origin audit records positive combined-model Brier reductions
-in all six later months. Its five-date block intervals are
-$[\RollingAllBrierLower{},\,\RollingAllBrierUpper{}]$ across all spreads and
-$[\RollingOneTickBrierLower{},\,\RollingOneTickBrierUpper{}]$ for one-tick
-states. This supports split stability within TSLA 2019, not generalization to a
-new year. The 10-percent-target net markout still falls to
-\LandmarkOneTickZeroNet{} basis points immediately,
-\LandmarkOneTickTenNet{} after 10 microseconds, and
-\LandmarkOneTickHundredNet{} after 100 microseconds. The pooled result remains
-strongly negative. Removing repeated terminal labels therefore narrows the
-exploratory positive tail rather than validating a strategy.
-
-Crossing the displayed book again at the next price move removes that remaining
-positive midpoint interpretation. At one share and zero entry latency, the
-one-tick result is \RoundTripOneOnePnl{} basis points
-$[\RoundTripOneOneLower{},\,\RoundTripOneOneUpper{}]$ before fees. At 100
-shares, \RoundTripOneHundredCapacity{} of arrived one-tick signals lack enough
-displayed level-2 size on at least one leg. The exit still assumes zero reaction
-latency, so this negative quoted result is a stress test rather than a backtest
-or deployable return estimate.
+Execution costs reverse the interpretation. The all-spread markout is
+\MarkoutAllZeroNet{} basis points at zero latency. The exploratory one-tick tail
+falls from \MarkoutOneTickZeroNet{} immediately to \MarkoutOneTickTenNet{} at
+10 microseconds; its 100-microsecond interval crosses zero with
+\MarkoutOneTickHundredStale{} stale. Sampling one signal per price spell leaves
+an all-spread markout of \LandmarkAllZeroNet{} and attenuates the one-tick tail
+from \LandmarkOneTickZeroNet{} to \LandmarkOneTickTenNet{} and then
+\LandmarkOneTickHundredNet{}. The rolling-origin reductions stay positive in
+all six later months, but only within TSLA 2019. A quoted exit then produces
+\RoundTripOneOnePnl{} basis points
+$[\RoundTripOneOneLower{},\,\RoundTripOneOneUpper{}]$ at one tick. Even the
+best observed row among \PolicyFamilyRows{} policies has simultaneous interval
+$[\PolicyBestSimLower{},\,\PolicyBestSimUpper{}]$. Two-level depth, zero exit
+reaction latency, and omitted fees, queue competition, impact, inventory, and
+capital make this a stress test rather than a backtest or deployable return.
 
 The included TSLA sessions also fit the scaling form proposed by
-\citet{patzelt2018}. This is a within-sample application to one stock-year, not
-an external replication. The supervised model is evaluated by the
-chronological score, while the markouts are state-level diagnostics with
-idealized fills. Neither establishes a deployable trading strategy.
+\citet{patzelt2018} in-sample. None of these results is an external replication
+or a deployable trading strategy.
 
+\begingroup
+\small
+\setlength{\bibsep}{0pt}
 \bibliographystyle{plainnat}
 \bibliography{references}
+\endgroup
 
 \end{document}

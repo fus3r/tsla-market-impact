@@ -207,6 +207,61 @@ def plot_count_residuals(
     return output
 
 
+def plot_asymmetric_liquidity(
+    bins: pd.DataFrame,
+    path: Path | str,
+) -> Path:
+    """Plot liquidity offered against surprising and expected visible orders."""
+
+    palette = _style()
+    figure, axes = plt.subplots(2, 2, figsize=(7.15, 5.4), layout="constrained")
+    panels = axes.ravel()
+    outcomes = [
+        (
+            "penetration_probability",
+            "(a)  Best-price penetration proxy",
+            "Probability",
+        ),
+        ("mean_log_order_size", "(b)  Reconstructed order size", r"Mean $\log V$"),
+        (
+            "mean_log_opposite_depth",
+            "(c)  Initial opposite depth",
+            r"Mean $\log Q^{opp}$",
+        ),
+        (
+            "mean_log_size_to_depth",
+            "(d)  Order size relative to depth",
+            r"Mean $\log(V/Q^{opp})$",
+        ),
+    ]
+    specifications = [
+        ("sell", "Seller initiated", palette["orange"]),
+        ("buy", "Buyer initiated", palette["blue"]),
+    ]
+    for side, label, color in specifications:
+        part = bins.loc[bins["side"].eq(side)].sort_values("expectedness_bin")
+        for axis, (column, title, ylabel) in zip(panels, outcomes, strict=True):
+            axis.plot(
+                part["mean_expectedness"],
+                part[column],
+                marker="o",
+                markersize=3.5,
+                linewidth=1.25,
+                color=color,
+                label=label,
+            )
+            axis.set_title(title, loc="left")
+            axis.set_ylabel(ylabel)
+    for axis in panels:
+        axis.set_xlabel(r"Sign expectedness $\epsilon_t\hat{\epsilon}_t$")
+        _clean_axis(axis)
+    panels[0].legend()
+    output = _prepare_path(path)
+    figure.savefig(output, bbox_inches="tight")
+    plt.close(figure)
+    return output
+
+
 def plot_horizon_robustness(metrics: pd.DataFrame, path: Path | str) -> Path:
     """Plot holdout model scores over five event-time horizons."""
 

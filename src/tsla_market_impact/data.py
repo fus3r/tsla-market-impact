@@ -394,6 +394,11 @@ def read_visible_executions(
     executions.insert(3, "event_row", event_rows)
     executions["execution_price"] = executions.pop("price_raw") / PRICE_SCALE
     executions["trade_sign"] = -executions["resting_order_direction"]
+    executions["opposite_best_size_before"] = np.where(
+        executions["trade_sign"].eq(1),
+        executions["ask_size_1_before"],
+        executions["bid_size_1_before"],
+    )
 
     price_columns = [column for column in executions if "_price_" in column]
     executions[price_columns] = executions[price_columns] / PRICE_SCALE
@@ -423,6 +428,7 @@ def aggregate_visible_market_orders(executions: pd.DataFrame) -> pd.DataFrame:
         weighted_notional=("_weighted_notional", "sum"),
         mid_price_before=("mid_price_before", "first"),
         spread_before=("spread_before", "first"),
+        opposite_best_size_before=("opposite_best_size_before", "first"),
     ).reset_index()
     market_orders["execution_price_vwap"] = (
         market_orders.pop("weighted_notional") / market_orders["size"]

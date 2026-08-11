@@ -6,9 +6,11 @@ orders with a C++20 level-2 replay and audit engine. The source delivery contain
 the three unavailable truncated pairs.
 
 The first question asks whether signed order count adds information about a
-same-window mid-price change after signed share volume is known. A separate
-forward experiment asks whether current queue imbalance and causal top-of-book
-order flow predict the direction of the next mid-price change. A nested
+same-window mid-price change after signed share volume is known. A fixed sign
+autoregression then asks whether more predictable aggressive orders face more
+displayed liquidity. A separate forward experiment asks whether current queue
+imbalance and causal top-of-book order flow predict the direction of the next
+mid-price change. A nested
 comparison then selects among fixed event- and clock-time OFI lookbacks without
 using the final dates. A marketable markout gate asks whether those direction
 scores survive the displayed spread and an explicit decision-to-entry delay. A
@@ -36,6 +38,34 @@ model's total reduction relative to linear signed volume is 27.4%, but most of
 that gap comes from the volume transforms. Both the order-flow variables and
 the price change are measured inside the same window, so this is a conditional
 impact model rather than a pre-trade forecast.
+
+The liquidity audit fits one OLS AR(50) on the first 198 dates, resetting lags
+at every session boundary, then scores the final 51 dates without refitting.
+Expectedness bins are learned on the training dates separately for buys and
+sells. Five-date circular blocks give the primary intervals:
+
+| Predictability-conditioned result | Later-date estimate |
+|---|---:|
+| Sign MSE reduction vs training-mean reference | 39.6% [38.1%, 41.1%] |
+| Best-price penetration proxy, surprising / expected | 63.0% / 51.7% |
+| Expected-minus-surprising penetration proxy | -11.4 pp [-13.7, -8.7] |
+| Mean log order-size contrast | +0.099 [+0.055, +0.145] |
+| Mean log opposite-depth contrast | +0.548 [+0.468, +0.616] |
+| Mean log size/depth contrast | -0.449 [-0.515, -0.374] |
+| Intraday-adjusted log order-size contrast | +0.063 [+0.021, +0.102] |
+| Intraday-adjusted log opposite-depth contrast | +0.494 [+0.422, +0.552] |
+| Intraday-adjusted log size/depth contrast | -0.432 [-0.499, -0.357] |
+
+Expected orders are slightly larger, but the displayed depth opposite them
+increases much more. The post-hoc adjustment compares the two expectedness
+tails within the same date, realized side, and fixed 30-minute bucket; common
+support retains 218,905 of 222,243 tail orders. This decomposition is compatible
+with the asymmetric-liquidity account in
+[Lillo and Farmer](https://arxiv.org/abs/cond-mat/0311053) and
+[Farmer et al.](https://arxiv.org/abs/physics/0602015), but it is not causal.
+Timestamp-and-side grouping is only a parent-order proxy, initial best depth is
+not depletion or executable capacity, and the final dates were inspected by
+other project analyses.
 
 The next-move experiment is forward-looking. Queue imbalance uses the current
 displayed sizes. OFI accumulates top-of-book changes only since the current
@@ -242,14 +272,15 @@ wire-to-wire trading latency.
   markout, price-spell landmark, and depth-constrained round-trip exporters, and the
   [finite-depth transition contract](cpp/README.md).
 - `src/tsla_market_impact/` contains the LOBSTER reconstruction, impact study,
-  chronological queue/OFI ablation, nested horizon selection, rolling-origin
-  signal stability, and marketable-markout, price-spell landmark, and quoted
-  round-trip analyses, including selection-aware simultaneous inference over
-  the round-trip policy family.
+  predictability-conditioned liquidity audit, chronological queue/OFI ablation,
+  nested horizon selection, rolling-origin signal stability, and
+  marketable-markout, price-spell landmark, and quoted round-trip analyses,
+  including selection-aware simultaneous inference over the round-trip policy
+  family.
 - `results/` contains aggregate tables, including the 252-row coverage audit
   and annual level-2 replay, benchmark, queue-model, order-flow, OFI-horizon,
-  markout, landmark, rolling-origin, round-trip, and simultaneous-policy results.
-  Licensed rows are not included.
+  asymmetric-liquidity, markout, landmark, rolling-origin, round-trip, and
+  simultaneous-policy results. Licensed rows are not included.
 - `report/` contains the LaTeX source, figures, references, and compiled PDF.
 - `tests/` checks source integrity, data alignment, event-time windows,
   chronological splits, complete-date and circular-block resampling, queue and
@@ -307,6 +338,9 @@ Run the analysis. Aggregate tables go to `results/` and the vector figures go to
 tsla-impact analyze \
   --visible data/processed/visible-market-orders.parquet \
   --scaling data/processed/scaling-transactions.parquet
+
+tsla-impact analyze-asymmetric-liquidity \
+  --orders data/processed/visible-market-orders.parquet
 ```
 
 Compile the report with Tectonic:

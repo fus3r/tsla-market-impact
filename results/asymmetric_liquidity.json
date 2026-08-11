@@ -1,0 +1,363 @@
+{
+  "protocol": {
+    "model": "OLS AR(50) of visible-order signs",
+    "lags_reset_at_session_boundary": true,
+    "fit": "once on dates before the fixed test boundary",
+    "expectedness": "realised sign times predicted sign",
+    "expectedness_bins": "10 train-defined quantiles fitted separately by side",
+    "penetration": "proxy: order size at least opposite best depth before first fill",
+    "liquidity_decomposition": "log order size minus log initial opposite best depth",
+    "intraday_control": "post-hoc date, realised side, and fixed 30-minute session bucket effects; no bucket-width search",
+    "primary_bootstrap_block_dates": 5,
+    "bootstrap_replicates": 10000,
+    "test_status": "chronological for this model; dates were inspected by other project analyses"
+  },
+  "scope": {
+    "train_first_date": "2019-01-02",
+    "train_last_date": "2019-10-17",
+    "test_first_date": "2019-10-18",
+    "test_last_date": "2019-12-31",
+    "train_dates": 198,
+    "test_dates": 51,
+    "train_scored_orders": 3512254,
+    "test_scored_orders": 1022374
+  },
+  "sign_prediction": {
+    "training_mean_sign": -0.0024656531105096613,
+    "normal_matrix_condition_number": 20.8223576409173,
+    "coefficients": [
+      -0.0006029136881400639,
+      0.47915421283739557,
+      0.10749309858119349,
+      0.03757842712493681,
+      0.015601782777668613,
+      0.009127802883171063,
+      0.006605191860427432,
+      0.004729837600070655,
+      0.005349753102682079,
+      0.0032840811662958923,
+      0.0027348014533624676,
+      0.0031796403208701703,
+      0.003194616344521795,
+      0.0022057998149336965,
+      0.0022663137827988802,
+      0.0030585933963101185,
+      0.002637911365301712,
+      0.0021011612855162546,
+      0.0016587401237215676,
+      0.0030767825107468018,
+      0.00154184541105622,
+      0.0016013005058105718,
+      0.0022450537519807133,
+      0.0014940375944100719,
+      0.0031594630404262487,
+      0.0018397208248922042,
+      0.001102013603826167,
+      0.0008531853755017699,
+      0.0022789633566184767,
+      0.001309323197174521,
+      0.0012897196391144978,
+      0.002608313113876106,
+      0.0004205447087755492,
+      0.0020439078588697103,
+      0.001484448673381615,
+      0.001526683748020476,
+      0.0016105677914396938,
+      0.0019006648221541488,
+      0.001139770570663106,
+      0.001416735759025441,
+      0.0004851996836859597,
+      0.0015942294237173058,
+      0.001899083783342241,
+      -0.00034694057439563393,
+      0.0018499791384678807,
+      0.002550211771197297,
+      0.000862502667916409,
+      -0.0001663175086010322,
+      0.002456143801473928,
+      0.0019426943554348797,
+      0.003318801340229578
+    ],
+    "test_mse": 0.6041070120333523,
+    "reference_test_mse": 0.999929947093116,
+    "test_sign_accuracy": 0.8085035417567348,
+    "date_block_bootstrap": [
+      {
+        "block_length_dates": 1,
+        "relative_mse_reduction": 0.39585066554957726,
+        "lower_95": 0.38463259527842675,
+        "median": 0.3960094676593444,
+        "upper_95": 0.40620103276073233,
+        "probability_nonpositive": 0.0
+      },
+      {
+        "block_length_dates": 5,
+        "relative_mse_reduction": 0.39585066554957726,
+        "lower_95": 0.38055414433519863,
+        "median": 0.3959312294380031,
+        "upper_95": 0.41091569983142173,
+        "probability_nonpositive": 0.0
+      },
+      {
+        "block_length_dates": 10,
+        "relative_mse_reduction": 0.39585066554957726,
+        "lower_95": 0.3802013758339243,
+        "median": 0.39582908555639307,
+        "upper_95": 0.4123001322306617,
+        "probability_nonpositive": 0.0
+      }
+    ]
+  },
+  "liquidity_response": {
+    "comparison": "most expected minus most surprising train-defined bin",
+    "side_standardisation": "equal weight to buys and sells",
+    "penetration_probability_contrast": [
+      {
+        "block_length_dates": 1,
+        "expected_minus_surprising": -0.11359373013225968,
+        "lower_95": -0.1278991815266881,
+        "median": -0.11379464428118764,
+        "upper_95": -0.09816618824928683,
+        "probability_nonnegative": 0.0
+      },
+      {
+        "block_length_dates": 5,
+        "expected_minus_surprising": -0.11359373013225968,
+        "lower_95": -0.1374348098818016,
+        "median": -0.11374855202608042,
+        "upper_95": -0.08713816961026455,
+        "probability_nonnegative": 0.0
+      },
+      {
+        "block_length_dates": 10,
+        "expected_minus_surprising": -0.11359373013225968,
+        "lower_95": -0.1433631595293065,
+        "median": -0.11405277792015506,
+        "upper_95": -0.079841792163648,
+        "probability_nonnegative": 0.0
+      }
+    ],
+    "mean_log_order_size_contrast": [
+      {
+        "block_length_dates": 1,
+        "expected_minus_surprising": 0.09942674882992919,
+        "lower_95": 0.05068068041051889,
+        "median": 0.0993520564749526,
+        "upper_95": 0.1448006259455725,
+        "probability_nonnegative": 1.0
+      },
+      {
+        "block_length_dates": 5,
+        "expected_minus_surprising": 0.09942674882992919,
+        "lower_95": 0.054642067223790565,
+        "median": 0.10005897953662035,
+        "upper_95": 0.1451383392907713,
+        "probability_nonnegative": 1.0
+      },
+      {
+        "block_length_dates": 10,
+        "expected_minus_surprising": 0.09942674882992919,
+        "lower_95": 0.06277085893427861,
+        "median": 0.10054437106805192,
+        "upper_95": 0.14441771216713462,
+        "probability_nonnegative": 1.0
+      }
+    ],
+    "mean_log_opposite_depth_contrast": [
+      {
+        "block_length_dates": 1,
+        "expected_minus_surprising": 0.5483876835888322,
+        "lower_95": 0.48485259599030217,
+        "median": 0.5477371974203209,
+        "upper_95": 0.605944683420045,
+        "probability_nonnegative": 1.0
+      },
+      {
+        "block_length_dates": 5,
+        "expected_minus_surprising": 0.5483876835888322,
+        "lower_95": 0.4676250579015599,
+        "median": 0.5494379269873401,
+        "upper_95": 0.6164543225562402,
+        "probability_nonnegative": 1.0
+      },
+      {
+        "block_length_dates": 10,
+        "expected_minus_surprising": 0.5483876835888322,
+        "lower_95": 0.4663707687372217,
+        "median": 0.5494146867487997,
+        "upper_95": 0.6207533348633204,
+        "probability_nonnegative": 1.0
+      }
+    ],
+    "mean_log_size_to_depth_contrast": [
+      {
+        "block_length_dates": 1,
+        "expected_minus_surprising": -0.44896093475890425,
+        "lower_95": -0.49457123265282754,
+        "median": -0.4483991493244924,
+        "upper_95": -0.40094313158537476,
+        "probability_nonnegative": 0.0
+      },
+      {
+        "block_length_dates": 5,
+        "expected_minus_surprising": -0.44896093475890425,
+        "lower_95": -0.5148664697852621,
+        "median": -0.4480346356859969,
+        "upper_95": -0.3743350490691617,
+        "probability_nonnegative": 0.0
+      },
+      {
+        "block_length_dates": 10,
+        "expected_minus_surprising": -0.44896093475890425,
+        "lower_95": -0.5270473250779476,
+        "median": -0.44760620589344574,
+        "upper_95": -0.35913477482621353,
+        "probability_nonnegative": 0.0
+      }
+    ],
+    "intraday_adjusted": {
+      "method": "within-stratum tail differences weighted by n_surprising*n_expected/(n_surprising+n_expected), then equal weight to sides",
+      "session_open_seconds": 34200,
+      "bucket_seconds": 1800,
+      "coverage": {
+        "tail_orders": 222243,
+        "overlap_tail_orders": 218905,
+        "overlap_order_fraction": 0.9849804043321949,
+        "intraday_strata": 1302,
+        "overlap_intraday_strata": 1235
+      },
+      "penetration_probability_contrast": [
+        {
+          "block_length_dates": 1,
+          "expected_minus_surprising": -0.10655198255665865,
+          "lower_95": -0.12130421118426306,
+          "median": -0.10671028376827357,
+          "upper_95": -0.09074737865670932,
+          "probability_nonnegative": 0.0
+        },
+        {
+          "block_length_dates": 5,
+          "expected_minus_surprising": -0.10655198255665865,
+          "lower_95": -0.1310374445439303,
+          "median": -0.10647696368124161,
+          "upper_95": -0.07862021815628395,
+          "probability_nonnegative": 0.0
+        },
+        {
+          "block_length_dates": 10,
+          "expected_minus_surprising": -0.10655198255665865,
+          "lower_95": -0.13735505732889186,
+          "median": -0.1062563714221181,
+          "upper_95": -0.0714312107780704,
+          "probability_nonnegative": 0.0
+        }
+      ],
+      "mean_log_order_size_contrast": [
+        {
+          "block_length_dates": 1,
+          "expected_minus_surprising": 0.06279507564661495,
+          "lower_95": 0.020460921761544428,
+          "median": 0.06287910406428063,
+          "upper_95": 0.10299145254874259,
+          "probability_nonnegative": 0.9981
+        },
+        {
+          "block_length_dates": 5,
+          "expected_minus_surprising": 0.06279507564661495,
+          "lower_95": 0.021417918097880073,
+          "median": 0.06275960985924338,
+          "upper_95": 0.10223866751304178,
+          "probability_nonnegative": 0.9985
+        },
+        {
+          "block_length_dates": 10,
+          "expected_minus_surprising": 0.06279507564661495,
+          "lower_95": 0.028076472687757495,
+          "median": 0.06384524054016723,
+          "upper_95": 0.10072446282186998,
+          "probability_nonnegative": 0.9999
+        }
+      ],
+      "mean_log_opposite_depth_contrast": [
+        {
+          "block_length_dates": 1,
+          "expected_minus_surprising": 0.49442536397676096,
+          "lower_95": 0.4360252686416777,
+          "median": 0.4945439670753319,
+          "upper_95": 0.5458420614044133,
+          "probability_nonnegative": 1.0
+        },
+        {
+          "block_length_dates": 5,
+          "expected_minus_surprising": 0.49442536397676096,
+          "lower_95": 0.4220219591507245,
+          "median": 0.4939971409869467,
+          "upper_95": 0.5520562239066946,
+          "probability_nonnegative": 1.0
+        },
+        {
+          "block_length_dates": 10,
+          "expected_minus_surprising": 0.49442536397676096,
+          "lower_95": 0.42736662265741554,
+          "median": 0.4944010750026848,
+          "upper_95": 0.5536025330857891,
+          "probability_nonnegative": 1.0
+        }
+      ],
+      "mean_log_size_to_depth_contrast": [
+        {
+          "block_length_dates": 1,
+          "expected_minus_surprising": -0.43163028833014605,
+          "lower_95": -0.47786804166827407,
+          "median": -0.43134781346058915,
+          "upper_95": -0.38381352355147247,
+          "probability_nonnegative": 0.0
+        },
+        {
+          "block_length_dates": 5,
+          "expected_minus_surprising": -0.43163028833014605,
+          "lower_95": -0.49899722922873346,
+          "median": -0.4302423271993235,
+          "upper_95": -0.356964692992031,
+          "probability_nonnegative": 0.0
+        },
+        {
+          "block_length_dates": 10,
+          "expected_minus_surprising": -0.43163028833014605,
+          "lower_95": -0.5138056188757321,
+          "median": -0.42955055769371486,
+          "upper_95": -0.34133092924694325,
+          "probability_nonnegative": 0.0
+        }
+      ]
+    },
+    "train_quantile_edges_by_sign": {
+      "-1": [
+        -0.7444413670220621,
+        -0.5904777752846313,
+        -0.287562014290816,
+        0.36431939747369735,
+        0.5231786416785317,
+        0.5905217603611367,
+        0.6250422839272671,
+        0.6495278858099387,
+        0.6710134026526731,
+        0.6939427513385136,
+        0.7459798294155443
+      ],
+      "1": [
+        -0.7456471943983422,
+        -0.5929319946252888,
+        -0.2920674349977924,
+        0.3603692812767679,
+        0.5193182443930713,
+        0.5879328781496175,
+        0.6228612434698511,
+        0.6475792312306897,
+        0.6691732590368376,
+        0.6921479765114832,
+        0.7447740020392642
+      ]
+    }
+  }
+}

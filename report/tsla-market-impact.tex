@@ -16,10 +16,10 @@
 \usepackage[hidelinks]{hyperref}
 
 \hypersetup{
-  pdftitle={Signed order count, order-book signals, markouts, and depth-aware replay: TSLA, 2019},
+  pdftitle={Signed order count, predictable flow, order-book signals, markouts, and depth-aware replay: TSLA, 2019},
   pdfauthor={Riad Darwish},
-  pdfsubject={Conditional impact, next-price prediction, marketable markouts, quoted round trips, and finite-depth replay},
-  pdfkeywords={market impact, marketable markout, quoted round trip, price-spell landmark, queue imbalance, order flow imbalance, market microstructure, LOBSTER, C++, TSLA}
+  pdfsubject={Conditional impact, predictable-flow liquidity, next-price prediction, marketable markouts, quoted round trips, and finite-depth replay},
+  pdfkeywords={market impact, asymmetric liquidity, predictable order flow, marketable markout, quoted round trip, price-spell landmark, queue imbalance, order flow imbalance, market microstructure, LOBSTER, C++, TSLA}
 }
 
 \input{results.tex}
@@ -45,7 +45,7 @@
 
 \thispagestyle{plain}
 \begin{center}
-  {\LARGE\bfseries Signed order count and order-book imbalance\par}
+  {\LARGE\bfseries Signed order count, predictable flow, and order-book imbalance\par}
   \vspace{1.5mm}
   {\Large TSLA, 2019\par}
   \vspace{4mm}
@@ -53,7 +53,7 @@
   \vspace{6mm}
   {\large Riad Darwish\par}
   {\normalsize CentraleSup\'elec\par}
-  {\normalsize 6 August 2026\par}
+  {\normalsize 11 August 2026\par}
 \end{center}
 
 \vspace{3mm}
@@ -87,6 +87,14 @@ squared error by \MseReduction{}. Resampling complete test dates gives a 95
 percent interval of \BootstrapMseLower{} to \BootstrapMseUpper{} for that
 incremental reduction. The full model's total reduction relative to linear
 signed volume is \TotalMseReduction{}.
+
+A fixed AR(50) of visible-order signs then reduces later-date sign MSE by
+\SignArMseReduction{} and shows that highly expected orders meet or exceed the
+initial opposite best quote less often than surprising orders. Expected orders
+are slightly larger, but the displayed depth opposite them increases much more,
+so their mean log size-to-depth ratio is lower. The same attribution survives
+a fixed date-by-side-by-half-hour control. This post-hoc result is an
+association, not a causal efficiency test.
 
 Separately, a C++20 engine audits \ReplayEvents{} included level-2
 message/snapshot pairs without claiming full order priority. It classifies
@@ -144,24 +152,25 @@ the study does not claim complete 2019 coverage or external replication.
 \end{center}
 
 \vspace{0.5em}
-\textbf{Keywords:} market impact, marketable markout, quoted round trip,
-price-spell landmark, queue imbalance, order-flow imbalance, market
-microstructure, chronological validation, rolling-origin evaluation,
-order-book replay, finite-size scaling
+\textbf{Keywords:} market impact, asymmetric liquidity, predictable order flow,
+marketable markout, quoted round trip, price-spell landmark, queue imbalance,
+order-flow imbalance, market microstructure, chronological validation,
+rolling-origin evaluation, order-book replay, finite-size scaling
 
 \section{Question}
 
 In the local benchmark of \citet{kyle1985}, signed order flow and price change
 are connected by a linear slope. Empirical impact curves bend, change scale with
 the aggregation horizon, and reflect persistent trade signs
-\citep{bouchaud2018,patzelt2018}. I ask three distinct questions for TSLA in
+\citep{bouchaud2018,patzelt2018}. I ask four distinct questions for TSLA in
 2019.
 First, does signed order count explain conditional price impact on later dates
-after signed volume has already been included? Second, do the current queues
-and order-flow changes observed since the last price move forecast the
-direction of the next move? Third, does that direction signal survive the
-displayed spread, an explicit delay between decision and entry, and a quoted
-marketable exit?
+after signed volume has already been included? Second, when prior signs make an
+aggressive order more predictable, does the liquidity displayed against that
+order differ? Third, do the current queues and order-flow changes observed
+since the last price move forecast the direction of the next move? Fourth, does
+that direction signal survive the displayed spread, an explicit delay between
+decision and entry, and a quoted marketable exit?
 
 Signed volume alone explains \BaselineRtwo{} of the holdout variance. Fixed
 volume transforms explain \VolumeRtwo{}. Adding raw signed count brings the
@@ -196,6 +205,17 @@ the same functional form is fitted to one included TSLA stock-year. This
 within-sample application can assess its description of these sessions; it is
 not an external replication of the paper's cross-sectional evidence.
 
+\citet{lillo2004} use a linear autoregression of prior order signs, with a
+largest lag typically around 50, to condition the probability that an
+aggressive order exhausts the opposite best quote. They also study the log
+ratio of order size to opposite displayed depth; that ratio mixes two channels,
+aggressive-order size and passive depth. Their evidence and the
+asymmetric-liquidity interpretation of \citet{farmer2006} motivate the audit
+below. Because depth varies through the day, I use the half-hour partition in
+\citet{cont2014} as a fixed post-hoc control. The TSLA exercise changes the
+binning and uncertainty protocol and does not reproduce the papers'
+multi-stock evidence.
+
 The course project followed \citet{bugaenko2019}, which connects order-flow
 imbalance, local liquidity estimates, and supervised impact models. I retain the
 transaction reconstruction and scaling exercise, but rebuild the supervised
@@ -222,6 +242,11 @@ Prices in the source files are integers scaled by 10,000. For a visible
 execution, event type 4, LOBSTER's direction field identifies the resting order.
 The aggressor sign is its opposite: $+1$ for a buyer-initiated execution and
 $-1$ for a seller-initiated execution.
+
+For the liquidity audit, a realized buy uses the pre-event best ask size and a
+realized sell uses the pre-event best bid size. When several fills share one
+timestamp and initiating side, their reconstructed order keeps the opposite
+depth immediately before the first fill.
 
 \subsection{Source coverage}
 
@@ -1248,6 +1273,134 @@ They do not measure future price variation. The proposed scaling form describes
 this included TSLA sample in-sample; the cross-asset claim in
 \citet{patzelt2018} requires a broader panel.
 
+\section{Predictability-conditioned liquidity}
+\label{sec:asymmetric-liquidity}
+
+Persistent order signs do not by themselves explain how comparatively weak
+return dependence can coexist with predictable flow. Following the diagnostic
+in \citet{lillo2004}, I fit one linear sign predictor,
+\begin{equation}
+  \widehat{\epsilon}_t
+  = a_0 + \sum_{k=1}^{50} a_k \epsilon_{t-k}.
+\end{equation}
+Lags reset at every session boundary. The coefficients are estimated once by
+OLS on the first 198 dates; the first 50 orders of each date are omitted. This
+gives \SignArTrainOrders{} training observations and \SignArTestOrders{}
+observations on the fixed final 51 dates. The reference is the constant mean
+sign estimated on the same training rows.
+
+For each realized side, define expectedness as
+$z_t=\epsilon_t\widehat{\epsilon}_t$. Ten quantile boundaries are estimated on
+the training dates separately for buys and sells, then held fixed. Let $V_t$
+be the reconstructed visible-order size and $Q_t^{\mathrm{opp}}$ the opposite
+best-quote size immediately before its first fill. The penetration proxy and
+relative-liquidity outcome are
+\begin{equation}
+  \mathbf{1}\{V_t \geq Q_t^{\mathrm{opp}}\},
+  \qquad
+  \log(V_t/Q_t^{\mathrm{opp}}).
+\end{equation}
+The first is a penetration proxy: reconstructed size meets or exceeds the
+initial best quote. It is not total depth, a direct observation of depletion,
+or executable capacity. Contrasts compare the most expected and most
+surprising train-defined bins, giving buys and sells equal weight. I report
+$\log V_t$ and $\log Q_t^{\mathrm{opp}}$ separately because their difference is
+exactly $\log(V_t/Q_t^{\mathrm{opp}})$.
+
+Displayed depth varies through the day, so a post-hoc sensitivity compares the
+two tails within fixed strata
+\begin{equation}
+  h=(\text{date},\text{side},
+  \lfloor(\text{seconds after 09:30})/1800\rfloor).
+\end{equation}
+Within each stratum containing both tails, the difference receives weight
+$n_{h,0}n_{h,9}/(n_{h,0}+n_{h,9})$. This is the within-stratum least-squares
+weight. I first pool those sufficient statistics for each side, then average
+the buy and sell estimates. The control retains \IntradayTailCoverage{}
+tail observations (\IntradayTailCoveragePct{}) in
+\IntradayStrataCoverage{} half-hour strata with common support.
+
+\begin{table}[H]
+  \centering
+  \caption{Fixed later-date sign forecast and conditional liquidity. Intervals
+  use 10,000 circular bootstrap draws with five-date blocks.}
+  \label{tab:asymmetric-liquidity}
+  \begin{tabular}{lr}
+    \toprule
+    Quantity & Estimate \\
+    \midrule
+    Sign accuracy & \SignArAccuracy{} \\
+    Sign MSE reduction vs training-mean reference &
+      \SignArMseReduction{} [\SignArMseLower{}, \SignArMseUpper{}] \\
+    Penetration proxy, most surprising bin & \SurprisingPenetration{} \\
+    Penetration proxy, most expected bin & \ExpectedPenetration{} \\
+    Expected minus surprising proxy &
+      \PenetrationContrast{} [\PenetrationLower{}, \PenetrationUpper{}] \\
+    Raw mean log order-size contrast &
+      \OrderSizeContrast{} [\OrderSizeLower{}, \OrderSizeUpper{}] \\
+    Raw mean log opposite-depth contrast &
+      \OppositeDepthContrast{}
+      [\OppositeDepthLower{}, \OppositeDepthUpper{}] \\
+    Raw mean log size/depth contrast &
+      \RelativeLiquidityContrast{}
+      [\RelativeLiquidityLower{}, \RelativeLiquidityUpper{}] \\
+    Intraday-adjusted penetration proxy &
+      \IntradayPenetrationContrast{}
+      [\IntradayPenetrationLower{}, \IntradayPenetrationUpper{}] \\
+    Adjusted mean log order-size contrast &
+      \IntradayOrderSizeContrast{}
+      [\IntradayOrderSizeLower{}, \IntradayOrderSizeUpper{}] \\
+    Adjusted mean log opposite-depth contrast &
+      \IntradayOppositeDepthContrast{}
+      [\IntradayOppositeDepthLower{}, \IntradayOppositeDepthUpper{}] \\
+    Adjusted mean log size/depth contrast &
+      \IntradayRelativeLiquidityContrast{}
+      [\IntradayRelativeLiquidityLower{},
+      \IntradayRelativeLiquidityUpper{}] \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/asymmetric-liquidity.pdf}
+  \caption{Liquidity conditional on sign expectedness in the final 51 dates.
+  Bin boundaries are learned on the earlier dates separately by realized side.
+  The four panels separate penetration, order size, opposite depth, and their
+  log ratio. They show an association, not a causal response by liquidity
+  providers.}
+  \label{fig:asymmetric-liquidity}
+\end{figure}
+
+The AR(50) clears its mechanism gate: later-date sign MSE falls by
+\SignArMseReduction{}, with interval
+[\SignArMseLower{}, \SignArMseUpper{}]. At the same time, the probability of
+meeting or exceeding the initial opposite best declines from
+\SurprisingPenetration{} in the most surprising bin to
+\ExpectedPenetration{} in the most expected bin. The raw log size/depth
+contrast is \RelativeLiquidityContrast{}. Its components rule out the simple
+explanation that expected orders are smaller: their mean log size is
+\OrderSizeContrast{} higher, while mean log opposite depth is
+\OppositeDepthContrast{} higher.
+
+The half-hour control gives the same attribution. Mean log order size is
+\IntradayOrderSizeContrast{} higher, but mean log opposite depth is
+\IntradayOppositeDepthContrast{} higher, leaving a
+\IntradayRelativeLiquidityContrast{} log-ratio contrast. The adjusted
+penetration difference is \IntradayPenetrationContrast{}. One- and ten-date
+blocks preserve the signs of all four adjusted contrasts. These intervals
+condition on the earlier-date fit and do not cover model choice or a new market
+regime.
+
+This pattern is compatible with the asymmetric-liquidity account in
+\citet{lillo2004,farmer2006}: the orders that are easiest to anticipate face
+more displayed depth relative to their size. The decomposition identifies
+which observed component dominates, but not who changed the book, when they did
+so, or whether the response makes prices efficient. Timestamp-and-side grouping
+is a proxy for a parent aggressive order, not an investor identifier. The split
+is chronological for this model, but the final dates had already been examined
+by other project analyses, so this is not a globally untouched replication.
+
 \section{Limitations}
 
 \begin{itemize}
@@ -1260,6 +1413,14 @@ this included TSLA sample in-sample; the cross-asset claim in
   \item Timestamp and side grouping cannot recover investor identity or
   institutional metaorders. The book covers NASDAQ rather than consolidated US
   liquidity, and hidden-execution signs are uncertain around the midpoint.
+  \item The predictability-conditioned audit uses realized trade side to select
+  opposite depth and standardize expectedness bins. That depth is an outcome
+  measured against a strictly lagged sign forecast, not a predictor of the
+  current sign. Initial best size is neither total book depth nor fillable
+  capacity. The fixed half-hour control removes date, side, and coarse
+  intraday composition from the tail contrast, but not spread regimes or
+  unobserved trader decisions. The association does not identify a causal
+  market-efficiency mechanism.
   \item Several states in the main next-move experiment can share one eventual
   label. The 100-microsecond landmark removes that repetition for a separate
   protocol, but filters short spells and changes the target population.
@@ -1312,7 +1473,8 @@ this included TSLA sample in-sample; the cross-asset claim in
 The Python package first loads the shared source and calendar policy and writes
 an aggregate scheduled-close audit. It then reconstructs the two transaction
 tables from the included sessions, builds event-time windows, fits the models,
-and writes the remaining aggregate files under \texttt{results/}. The C++20
+runs the predictable-flow liquidity audit, and writes the remaining aggregate
+files under \texttt{results/}. The C++20
 library loads the same policy, rejects undeclared incomplete sessions, audits
 finite-depth transitions, and exports daily queue, joint queue/OFI,
 multi-horizon OFI, state-level markout, price-spell landmark, and
@@ -1321,10 +1483,11 @@ cover file pairing, source coverage, half-day filtering, book alignment, day
 boundaries, fixed chronological splits, complete-date and circular-block
 resampling, queue/OFI ablation, nested train-only horizon selection, monthly
 rolling-origin refits, markout accounting, non-overlapping price-spell
-landmarks, round-trip capacity censoring, simultaneous policy inference, grid
-robustness, and the scaling regressions. Reproducing the annual transaction
-tables, replay, and aggregate grids requires licensed LOBSTER files, which are
-not tracked.
+landmarks, pre-fill opposite-depth alignment, sign-predictability and intraday
+tail contrasts, round-trip capacity censoring, simultaneous policy inference,
+grid robustness, and the scaling regressions. Reproducing the annual
+transaction tables, replay, and aggregate grids requires licensed LOBSTER
+files, which are not tracked.
 
 The course presentation lists L. Cohen, R. Darwish, A. Pariente, H. Rohrbach,
 and R. Sithisak. Anastasia Bugaenko supervised the work. I wrote this standalone
@@ -1340,6 +1503,16 @@ reduces MSE by \MseReduction{}, with a date-bootstrap interval of
 [\BootstrapMseLower{}, \BootstrapMseUpper{}]. The full count-transform model's
 \TotalMseReduction{} reduction relative to linear signed volume is a broader
 ablation gap and is not attributed to count alone.
+
+A fixed AR(50) reduces sign MSE by \SignArMseReduction{} on the same final 51
+dates. Orders in its most expected bin meet or exceed the initial opposite best
+depth \ExpectedPenetration{} of the time, versus \SurprisingPenetration{} in
+the most surprising bin. Within date, side, and half-hour cells, mean log
+opposite depth rises by \IntradayOppositeDepthContrast{} while mean log order
+size rises by only \IntradayOrderSizeContrast{}, leaving a
+\IntradayRelativeLiquidityContrast{} relative-liquidity contrast. This
+decomposition is compatible with asymmetric liquidity, but does not establish
+causal adaptation or market efficiency.
 
 The finite-depth engine audits \ReplayEvents{} included events without claiming
 unobservable FIFO state. On later dates, causal OFI reduces pooled Brier score

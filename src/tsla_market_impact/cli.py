@@ -12,6 +12,7 @@ from .data import (
     run_session_coverage_audit,
 )
 from .horizons import run_ofi_horizon_analysis
+from .liquidity import run_asymmetric_liquidity_analysis
 from .markouts import (
     run_marketable_markout_analysis,
     run_price_spell_landmark_analysis,
@@ -50,6 +51,21 @@ def _parser() -> argparse.ArgumentParser:
     analyze.add_argument("--scaling", type=Path, required=True)
     analyze.add_argument("--results", type=Path, default=Path("results"))
     analyze.add_argument("--figures", type=Path, default=Path("report/figures"))
+
+    asymmetric_liquidity = subparsers.add_parser(
+        "analyze-asymmetric-liquidity"
+    )
+    asymmetric_liquidity.add_argument("--orders", type=Path, required=True)
+    asymmetric_liquidity.add_argument(
+        "--results",
+        type=Path,
+        default=Path("results"),
+    )
+    asymmetric_liquidity.add_argument(
+        "--figures",
+        type=Path,
+        default=Path("report/figures"),
+    )
 
     queue = subparsers.add_parser("analyze-queue")
     queue.add_argument("--bins", type=Path, required=True)
@@ -184,6 +200,13 @@ def main() -> None:
         result = run_analysis(
             args.visible,
             args.scaling,
+            args.results,
+            args.figures,
+            analysis_policy=policy,
+        )
+    elif args.command == "analyze-asymmetric-liquidity":
+        result = run_asymmetric_liquidity_analysis(
+            args.orders,
             args.results,
             args.figures,
             analysis_policy=policy,

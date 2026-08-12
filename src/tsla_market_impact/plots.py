@@ -8,6 +8,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -394,6 +395,99 @@ def plot_scaling_fits(
         residual.set_xlabel("Horizon N (transactions)")
         residual.set_ylabel("Log residual")
         _clean_axis(residual)
+
+    output = _prepare_path(path)
+    figure.savefig(output, bbox_inches="tight")
+    plt.close(figure)
+    return output
+
+
+def plot_order_sign_persistence(
+    daily: pd.DataFrame,
+    result: dict[str, object],
+    path: Path | str,
+) -> Path:
+    """Plot daily DFA1 exponents and the annual-median uncertainty checks."""
+
+    palette = _style()
+    included = daily.loc[daily["included"]].copy()
+    included["date"] = pd.to_datetime(included["date"])
+    observed = result["observed"]
+    null = result["permutation_null"]
+    intervals = result["date_block_bootstrap"]
+
+    figure, axes = plt.subplots(1, 2, figsize=(7.15, 3.25), layout="constrained")
+    axes[0].plot(
+        included["date"],
+        included["dfa_exponent"],
+        color=palette["line"],
+        linewidth=0.7,
+        zorder=1,
+    )
+    axes[0].scatter(
+        included["date"],
+        included["dfa_exponent"],
+        s=9,
+        color=palette["blue"],
+        alpha=0.75,
+        edgecolors="none",
+        zorder=2,
+    )
+    axes[0].axhline(
+        observed["median_exponent"],
+        color=palette["orange"],
+        linewidth=1.2,
+        label="Observed median",
+    )
+    axes[0].xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+    axes[0].xaxis.set_major_formatter(mdates.DateFormatter("%b"))
+    axes[0].set_title("(a)  Daily estimates", loc="left")
+    axes[0].set_xlabel("2019 trading date")
+    axes[0].set_ylabel("DFA1 exponent")
+    axes[0].legend(loc="best")
+    _clean_axis(axes[0])
+
+    labels = ["Permutation null"] + [
+        f"{interval['block_length_dates']}-date blocks"
+        for interval in intervals
+    ]
+    y_positions = np.arange(len(labels))
+    points = [null["null_median_exponent"]] + [
+        interval["observed_median_exponent"]
+        for interval in intervals
+    ]
+    lowers = [null["null_median_lower_95"]] + [
+        interval["lower_95"]
+        for interval in intervals
+    ]
+    uppers = [null["null_median_upper_95"]] + [
+        interval["upper_95"]
+        for interval in intervals
+    ]
+    colors = [palette["blue"]] + [palette["orange"]] * len(intervals)
+    for y_position, point, lower, upper, color in zip(
+        y_positions,
+        points,
+        lowers,
+        uppers,
+        colors,
+        strict=True,
+    ):
+        axes[1].errorbar(
+            point,
+            y_position,
+            xerr=np.array([[point - lower], [upper - point]]),
+            fmt="o",
+            color=color,
+            capsize=2.5,
+            markersize=4.5,
+            linewidth=1.0,
+        )
+    axes[1].set_yticks(y_positions, labels)
+    axes[1].invert_yaxis()
+    axes[1].set_title("(b)  Annual median checks", loc="left")
+    axes[1].set_xlabel("DFA1 exponent")
+    _clean_axis(axes[1])
 
     output = _prepare_path(path)
     figure.savefig(output, bbox_inches="tight")

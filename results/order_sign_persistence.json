@@ -1,0 +1,93 @@
+{
+  "protocol": {
+    "sample": "timestamp-aggregated type-4/type-5 transactions signed against the pre-event midpoint",
+    "date_boundary": "signs are centered, integrated, and analyzed within each date",
+    "dfa_order": 1,
+    "scales_transactions": [
+      16,
+      32,
+      64,
+      128,
+      256,
+      512,
+      1024
+    ],
+    "minimum_signed_transactions": 8192,
+    "segment_rule": "non-overlapping segments from the beginning and end; linear detrending within every segment",
+    "scale_fit": "equal-weight OLS of log fluctuation on log scale",
+    "permutation_null": {
+      "method": "independent within-date sign permutations",
+      "replicates": 199,
+      "random_state": 42,
+      "preserves": [
+        "date length",
+        "date buy fraction"
+      ],
+      "test": "upper-tail annual median exponent"
+    },
+    "date_bootstrap": {
+      "method": "circular blocks of consecutive trading dates",
+      "block_lengths_dates": [
+        1,
+        5,
+        10
+      ],
+      "replicates": 10000,
+      "random_state": 42
+    },
+    "interpretation": "rejection of the permutation null demonstrates serial dependence, not specifically long memory; DFA1 does not remove every intraday seasonal pattern or structural break"
+  },
+  "sample": {
+    "dates": 249,
+    "included_dates": 249,
+    "excluded_dates": 0,
+    "first_included_date": "2019-01-02",
+    "last_included_date": "2019-12-31",
+    "signed_transactions": 5845437,
+    "included_signed_transactions": 5845437,
+    "covered_transaction_share": 1.0,
+    "excluded_date_values": []
+  },
+  "observed": {
+    "median_exponent": 0.6993023562540644,
+    "q25_exponent": 0.6805251127369134,
+    "q75_exponent": 0.7200805188310362,
+    "median_fit_r_squared": 0.9957397686707902
+  },
+  "permutation_null": {
+    "null_median_exponent": 0.5005894265215277,
+    "null_median_lower_95": 0.49825450997955095,
+    "null_median_upper_95": 0.5028040553462846,
+    "upper_tail_exceedances": 0,
+    "monte_carlo_p_value": 0.005
+  },
+  "date_block_bootstrap": [
+    {
+      "dates": 249,
+      "block_length_dates": 1,
+      "replicates": 10000,
+      "observed_median_exponent": 0.6993023562540644,
+      "bootstrap_median_exponent": 0.6993023562540644,
+      "lower_95": 0.6957558392974501,
+      "upper_95": 0.7048359938650474
+    },
+    {
+      "dates": 249,
+      "block_length_dates": 5,
+      "replicates": 10000,
+      "observed_median_exponent": 0.6993023562540644,
+      "bootstrap_median_exponent": 0.6993023562540644,
+      "lower_95": 0.6941019823501435,
+      "upper_95": 0.7081649486246491
+    },
+    {
+      "dates": 249,
+      "block_length_dates": 10,
+      "replicates": 10000,
+      "observed_median_exponent": 0.6993023562540644,
+      "bootstrap_median_exponent": 0.6993023562540644,
+      "lower_95": 0.6937060214896876,
+      "upper_95": 0.7089167433944049
+    }
+  ]
+}

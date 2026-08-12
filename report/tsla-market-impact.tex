@@ -16,10 +16,10 @@
 \usepackage[hidelinks]{hyperref}
 
 \hypersetup{
-  pdftitle={Signed order count, predictable flow, order-book signals, markouts, and depth-aware replay: TSLA, 2019},
+  pdftitle={Signed order count, order-sign persistence, predictable flow, order-book signals, markouts, and depth-aware replay: TSLA, 2019},
   pdfauthor={Riad Darwish},
-  pdfsubject={Conditional impact, predictable-flow liquidity, next-price prediction, marketable markouts, quoted round trips, and finite-depth replay},
-  pdfkeywords={market impact, asymmetric liquidity, predictable order flow, marketable markout, quoted round trip, price-spell landmark, queue imbalance, order flow imbalance, market microstructure, LOBSTER, C++, TSLA}
+  pdfsubject={Conditional impact, daily sign persistence, predictable-flow liquidity, next-price prediction, marketable markouts, quoted round trips, and finite-depth replay},
+  pdfkeywords={market impact, order-sign persistence, DFA, asymmetric liquidity, predictable order flow, marketable markout, quoted round trip, price-spell landmark, queue imbalance, order flow imbalance, market microstructure, LOBSTER, C++, TSLA}
 }
 
 \input{results.tex}
@@ -53,7 +53,7 @@
   \vspace{6mm}
   {\large Riad Darwish\par}
   {\normalsize CentraleSup\'elec\par}
-  {\normalsize 11 August 2026\par}
+  {\normalsize 12 August 2026\par}
 \end{center}
 
 \vspace{3mm}
@@ -87,6 +87,11 @@ squared error by \MseReduction{}. Resampling complete test dates gives a 95
 percent interval of \BootstrapMseLower{} to \BootstrapMseUpper{} for that
 incremental reduction. The full model's total reduction relative to linear
 signed volume is \TotalMseReduction{}.
+
+Separately, daily DFA1 gives a median order-sign exponent of
+\DfaMedianExponent{} against a within-date permutation-null median of
+\DfaNullMedianExponent{} (\(p_{\mathrm{MC}}=\DfaPermutationP{}\)). This
+establishes serial dependence on the fixed scales, not long memory.
 
 A fixed AR(50) of visible-order signs then reduces later-date sign MSE by
 \SignArMseReduction{} and shows that highly expected orders meet or exceed the
@@ -152,10 +157,11 @@ the study does not claim complete 2019 coverage or external replication.
 \end{center}
 
 \vspace{0.5em}
-\textbf{Keywords:} market impact, asymmetric liquidity, predictable order flow,
-marketable markout, quoted round trip, price-spell landmark, queue imbalance,
-order-flow imbalance, market microstructure, chronological validation,
-rolling-origin evaluation, order-book replay, finite-size scaling
+\textbf{Keywords:} market impact, order-sign persistence, detrended fluctuation
+analysis, asymmetric liquidity, predictable order flow, marketable markout,
+quoted round trip, price-spell landmark, queue imbalance, order-flow imbalance,
+market microstructure, chronological validation, rolling-origin evaluation,
+order-book replay, finite-size scaling
 
 \section{Question}
 
@@ -165,11 +171,12 @@ the aggregation horizon, and reflect persistent trade signs
 \citep{bouchaud2018,patzelt2018}. I ask four distinct questions for TSLA in
 2019.
 First, does signed order count explain conditional price impact on later dates
-after signed volume has already been included? Second, when prior signs make an
-aggressive order more predictable, does the liquidity displayed against that
-order differ? Third, do the current queues and order-flow changes observed
-since the last price move forecast the direction of the next move? Fourth, does
-that direction signal survive the displayed spread, an explicit delay between
+after signed volume has already been included? Second, do transaction signs
+persist on fixed within-session scales, and when prior signs make an aggressive
+order more predictable, does the liquidity displayed against that order
+differ? Third, do the current queues and order-flow changes observed since the
+last price move forecast the direction of the next move? Fourth, does that
+direction signal survive the displayed spread, an explicit delay between
 decision and entry, and a quoted marketable exit?
 
 Signed volume alone explains \BaselineRtwo{} of the holdout variance. Fixed
@@ -1273,12 +1280,75 @@ They do not measure future price variation. The proposed scaling form describes
 this included TSLA sample in-sample; the cross-asset claim in
 \citet{patzelt2018} requires a broader panel.
 
+\subsection{Daily order-sign persistence}
+
+The pooled exponent above mixes all dates and does not test whether the sign
+sequence is persistent within a session. I therefore apply first-order
+detrended fluctuation analysis \citep{peng1994} separately to every date. For
+each sign sequence, I subtract its daily mean, integrate the centered signs,
+split the profile into non-overlapping segments from both the beginning and
+end, and remove a linear trend in every segment. The scale grid was fixed at
+16, 32, 64, 128, 256, 512, and 1,024 transactions. The exponent is the
+equal-weight slope through the seven log fluctuation values.
+
+A date enters when it contains at least 8,192 signed transactions. All
+\DfaIncludedDates{} included sessions pass this rule, covering
+\DfaCoveredShare{} of the \ScalingTransactions{} type-4/type-5 transactions.
+No date is filtered by its exponent, fit quality, or curve shape. The daily
+median fit \Rtwo{} is \DfaMedianFitRtwo{}.
+
+\begin{table}[H]
+  \centering
+  \caption{Daily DFA1 order-sign audit. The null distribution contains 199
+  annual medians from independent within-date permutations. Date intervals
+  use 10,000 circular-block bootstrap draws.}
+  \label{tab:dfa}
+  \begin{tabular}{lr}
+    \toprule
+    Quantity & Estimate \\
+    \midrule
+    Daily median exponent & \DfaMedianExponent{} \\
+    Daily interquartile range &
+      [\DfaQoneExponent{}, \DfaQthreeExponent{}] \\
+    Permutation-null median &
+      \DfaNullMedianExponent{} [\DfaNullLower{}, \DfaNullUpper{}] \\
+    Upper-tail Monte Carlo \(p\)-value & \DfaPermutationP{} \\
+    One-date block interval &
+      [\DfaOneBlockLower{}, \DfaOneBlockUpper{}] \\
+    Five-date block interval &
+      [\DfaFiveBlockLower{}, \DfaFiveBlockUpper{}] \\
+    Ten-date block interval &
+      [\DfaTenBlockLower{}, \DfaTenBlockUpper{}] \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/order-sign-persistence.pdf}
+  \caption{Daily DFA1 estimates and annual-median checks. The left line is the
+  observed annual median. On the right, the blue interval is the central
+  95 percent range of the permutation-null medians; orange intervals resample
+  consecutive trading dates. The two interval types answer different
+  questions.}
+  \label{fig:dfa}
+\end{figure}
+
+None of the 199 permuted annual medians reaches the observed value. The
+plus-one Monte Carlo estimate is therefore \(p_{\mathrm{MC}}=
+\DfaPermutationP{}\). The null preserves each date's transaction count and buy
+fraction, so this rejects an independently ordered sign sequence under that
+conditioning. It demonstrates serial dependence over the fixed scales. It
+does not by itself identify asymptotic long memory: DFA1 does not remove every
+intraday seasonal pattern or structural break, and only one stock-year is
+available.
+
 \section{Predictability-conditioned liquidity}
 \label{sec:asymmetric-liquidity}
 
-Persistent order signs do not by themselves explain how comparatively weak
-return dependence can coexist with predictable flow. Following the diagnostic
-in \citet{lillo2004}, I fit one linear sign predictor,
+The DFA result establishes dependence but does not explain how comparatively
+weak return dependence can coexist with predictable flow. Following the
+diagnostic in \citet{lillo2004}, I fit one linear sign predictor,
 \begin{equation}
   \widehat{\epsilon}_t
   = a_0 + \sum_{k=1}^{50} a_k \epsilon_{t-k}.
@@ -1464,6 +1534,10 @@ by other project analyses, so this is not a globally untouched replication.
   \item The scaling standard errors treat first-stage $Q_N$ and $R_N$ estimates
   as data. They do not propagate all curve-fitting uncertainty, and overlapping
   information across horizons remains.
+  \item The daily DFA1 permutation test holds session length and buy fraction
+  fixed but does not remove every intraday seasonal pattern, structural break,
+  or change in execution-sign classification. Its rejection establishes
+  serial dependence on the declared scales, not asymptotic long memory.
   \item TSLA in 2019 is one liquidity regime. The count, OFI, and fitted-scaling
   results cannot be assumed to hold for another asset or year.
 \end{itemize}
@@ -1472,20 +1546,21 @@ by other project analyses, so this is not a globally untouched replication.
 
 The Python package first loads the shared source and calendar policy and writes
 an aggregate scheduled-close audit. It then reconstructs the two transaction
-tables from the included sessions, builds event-time windows, fits the models,
-runs the predictable-flow liquidity audit, and writes the remaining aggregate
-files under \texttt{results/}. The C++20
+tables from the included sessions, runs the daily sign-persistence audit,
+builds event-time windows, fits the models, runs the predictable-flow liquidity
+audit, and writes the remaining aggregate files under \texttt{results/}. The C++20
 library loads the same policy, rejects undeclared incomplete sessions, audits
 finite-depth transitions, and exports daily queue, joint queue/OFI,
 multi-horizon OFI, state-level markout, price-spell landmark, and
 depth-constrained round-trip bins. The figures are vector PDFs. Synthetic tests
 cover file pairing, source coverage, half-day filtering, book alignment, day
 boundaries, fixed chronological splits, complete-date and circular-block
-resampling, queue/OFI ablation, nested train-only horizon selection, monthly
-rolling-origin refits, markout accounting, non-overlapping price-spell
-landmarks, pre-fill opposite-depth alignment, sign-predictability and intraday
-tail contrasts, round-trip capacity censoring, simultaneous policy inference,
-grid robustness, and the scaling regressions. Reproducing the annual
+resampling, direct DFA1 detrending, queue/OFI ablation, nested train-only
+horizon selection, monthly rolling-origin refits, markout accounting,
+non-overlapping price-spell landmarks, pre-fill opposite-depth alignment,
+sign-predictability and intraday tail contrasts, round-trip capacity censoring,
+simultaneous policy inference, grid robustness, and the scaling regressions.
+Reproducing the annual
 transaction tables, replay, and aggregate grids requires licensed LOBSTER
 files, which are not tracked.
 
@@ -1538,8 +1613,12 @@ reaction latency, and omitted fees, queue competition, impact, inventory, and
 capital make this a stress test rather than a backtest or deployable return.
 
 The included TSLA sessions also fit the scaling form proposed by
-\citet{patzelt2018} in-sample. None of these results is an external replication
-or a deployable trading strategy.
+\citet{patzelt2018} in-sample. Daily DFA1 separates the sign-persistence claim
+from the pooled variance fit: its median exponent is \DfaMedianExponent{},
+compared with \DfaNullMedianExponent{} under within-date sign permutations.
+The rejection supports serial dependence on the fixed transaction scales, not
+a claim of asymptotic long memory. None of these results is an external
+replication or a deployable trading strategy.
 
 \begingroup
 \small

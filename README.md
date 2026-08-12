@@ -6,9 +6,11 @@ orders with a C++20 level-2 replay and audit engine. The source delivery contain
 the three unavailable truncated pairs.
 
 The first question asks whether signed order count adds information about a
-same-window mid-price change after signed share volume is known. A fixed sign
-autoregression then asks whether more predictable aggressive orders face more
-displayed liquidity. A separate forward experiment asks whether current queue
+same-window mid-price change after signed share volume is known. A daily DFA1
+audit separately tests whether reconstructed transaction signs persist on a
+scale grid fixed before inspection. A fixed sign autoregression then asks
+whether more predictable aggressive orders face more displayed liquidity. A
+separate forward experiment asks whether current queue
 imbalance and causal top-of-book order flow predict the direction of the next
 mid-price change. A nested
 comparison then selects among fixed event- and clock-time OFI lookbacks without
@@ -38,6 +40,29 @@ model's total reduction relative to linear signed volume is 27.4%, but most of
 that gap comes from the volume transforms. Both the order-flow variables and
 the price change are measured inside the same window, so this is a conditional
 impact model rather than a pre-trade forecast.
+
+The order-sign audit centers and integrates each date separately, applies
+linear detrending at 16, 32, 64, 128, 256, 512, and 1,024 transactions, and
+fits the seven log fluctuation values with equal weight. All 249 included dates
+exceed the pre-specified 8,192-transaction threshold:
+
+| Daily DFA1 result | Value |
+|---|---:|
+| Median exponent | 0.699 |
+| Daily interquartile range | [0.681, 0.720] |
+| Within-date permutation-null median | 0.501 |
+| Upper-tail Monte Carlo p-value | 0.005 |
+| Five-date circular-block interval | [0.694, 0.708] |
+
+The null uses 199 independent sign permutations per date and preserves both
+daily length and buy fraction. One- and ten-date block intervals are
+[0.696, 0.705] and [0.694, 0.709]. Rejection demonstrates serial dependence on
+the fixed scales; it is not by itself evidence of long memory because DFA1
+does not remove every intraday seasonal pattern or structural break. The
+protocol and daily estimates are recorded in
+[`results/order_sign_persistence.json`](results/order_sign_persistence.json)
+and
+[`results/order_sign_persistence_daily.csv`](results/order_sign_persistence_daily.csv).
 
 The liquidity audit fits one OLS AR(50) on the first 198 dates, resetting lags
 at every session boundary, then scores the final 51 dates without refitting.
@@ -272,22 +297,24 @@ wire-to-wire trading latency.
   markout, price-spell landmark, and depth-constrained round-trip exporters, and the
   [finite-depth transition contract](cpp/README.md).
 - `src/tsla_market_impact/` contains the LOBSTER reconstruction, impact study,
-  predictability-conditioned liquidity audit, chronological queue/OFI ablation,
-  nested horizon selection, rolling-origin signal stability, and
+  daily sign-persistence diagnostic, predictability-conditioned liquidity
+  audit, chronological queue/OFI ablation, nested horizon selection,
+  rolling-origin signal stability, and
   marketable-markout, price-spell landmark, and quoted round-trip analyses,
   including selection-aware simultaneous inference over the round-trip policy
   family.
 - `results/` contains aggregate tables, including the 252-row coverage audit
   and annual level-2 replay, benchmark, queue-model, order-flow, OFI-horizon,
-  asymmetric-liquidity, markout, landmark, rolling-origin, round-trip, and
-  simultaneous-policy results. Licensed rows are not included.
+  order-sign persistence, asymmetric-liquidity, markout, landmark,
+  rolling-origin, round-trip, and simultaneous-policy results. Licensed rows
+  are not included.
 - `report/` contains the LaTeX source, figures, references, and compiled PDF.
 - `tests/` checks source integrity, data alignment, event-time windows,
-  chronological splits, complete-date and circular-block resampling, queue and
-  markout evaluation, nested horizon selection, one-signal-per-spell deadlines,
-  round-trip accounting, capacity censoring, simultaneous policy inference, and
-  scaling fits, plus a complete CLI run on a hand-written redistributable
-  session.
+  chronological splits, complete-date and circular-block resampling, a direct
+  DFA1 oracle, queue and markout evaluation, nested horizon selection,
+  one-signal-per-spell deadlines, round-trip accounting, capacity censoring,
+  simultaneous policy inference, and scaling fits, plus a complete CLI run on
+  a hand-written redistributable session.
 
 ## Data
 
@@ -338,6 +365,9 @@ Run the analysis. Aggregate tables go to `results/` and the vector figures go to
 tsla-impact analyze \
   --visible data/processed/visible-market-orders.parquet \
   --scaling data/processed/scaling-transactions.parquet
+
+tsla-impact analyze-sign-persistence \
+  --transactions data/processed/scaling-transactions.parquet
 
 tsla-impact analyze-asymmetric-liquidity \
   --orders data/processed/visible-market-orders.parquet

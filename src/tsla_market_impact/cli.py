@@ -18,6 +18,7 @@ from .markouts import (
     run_price_spell_landmark_analysis,
 )
 from .orderflow import run_order_flow_analysis, run_order_flow_grid_robustness
+from .persistence import run_order_sign_persistence_analysis
 from .pipeline import run_analysis
 from .policy import DEFAULT_ANALYSIS_POLICY, load_analysis_policy
 from .policy_audit import run_round_trip_policy_audit
@@ -51,6 +52,15 @@ def _parser() -> argparse.ArgumentParser:
     analyze.add_argument("--scaling", type=Path, required=True)
     analyze.add_argument("--results", type=Path, default=Path("results"))
     analyze.add_argument("--figures", type=Path, default=Path("report/figures"))
+
+    persistence = subparsers.add_parser("analyze-sign-persistence")
+    persistence.add_argument("--transactions", type=Path, required=True)
+    persistence.add_argument("--results", type=Path, default=Path("results"))
+    persistence.add_argument(
+        "--figures",
+        type=Path,
+        default=Path("report/figures"),
+    )
 
     asymmetric_liquidity = subparsers.add_parser(
         "analyze-asymmetric-liquidity"
@@ -200,6 +210,13 @@ def main() -> None:
         result = run_analysis(
             args.visible,
             args.scaling,
+            args.results,
+            args.figures,
+            analysis_policy=policy,
+        )
+    elif args.command == "analyze-sign-persistence":
+        result = run_order_sign_persistence_analysis(
+            args.transactions,
             args.results,
             args.figures,
             analysis_policy=policy,

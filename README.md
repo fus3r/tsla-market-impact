@@ -8,8 +8,9 @@ the three unavailable truncated pairs.
 The first question asks whether signed order count adds information about a
 same-window mid-price change after signed share volume is known. A daily DFA1
 audit separately tests whether reconstructed transaction signs persist on a
-scale grid fixed before inspection. A fixed sign autoregression then asks
-whether more predictable aggressive orders face more displayed liquidity. A
+scale grid fixed before inspection. A fixed sign autoregression then asks how
+more predictable aggressive orders differ in immediate response and best-quote
+state. A
 separate forward experiment asks whether current queue
 imbalance and causal top-of-book order flow predict the direction of the next
 mid-price change. A nested
@@ -72,25 +73,39 @@ sells. Five-date circular blocks give the primary intervals:
 | Predictability-conditioned result | Later-date estimate |
 |---|---:|
 | Sign MSE reduction vs training-mean reference | 39.6% [38.1%, 41.1%] |
-| Best-price penetration proxy, surprising / expected | 63.0% / 51.7% |
-| Expected-minus-surprising penetration proxy | -11.4 pp [-13.7, -8.7] |
+| Expected-minus-surprising nonzero midpoint move | -11.4 pp [-13.7, -8.7] |
+| Expected-minus-surprising signed midpoint response | -0.235 bp [-0.270, -0.195] |
+| Conditional response among midpoint movers | -0.272 bp [-0.344, -0.202] |
 | Mean log order-size contrast | +0.099 [+0.055, +0.145] |
 | Mean log opposite-depth contrast | +0.548 [+0.468, +0.616] |
-| Mean log size/depth contrast | -0.449 [-0.515, -0.374] |
-| Intraday-adjusted log order-size contrast | +0.063 [+0.021, +0.102] |
-| Intraday-adjusted log opposite-depth contrast | +0.494 [+0.422, +0.552] |
-| Intraday-adjusted log size/depth contrast | -0.432 [-0.499, -0.357] |
+| Mean log same-side-depth contrast | -0.228 [-0.291, -0.165] |
+| Mean log opposite/same-side-depth contrast | +0.776 [+0.665, +0.871] |
+| Intraday-adjusted signed midpoint response | -0.271 bp [-0.300, -0.240] |
+| Intraday-adjusted log opposite/same-side depth | +0.756 [+0.649, +0.843] |
+| Intraday-adjusted mean log spread | +0.114 [+0.077, +0.149] |
 
-Expected orders are slightly larger, but the displayed depth opposite them
-increases much more. The post-hoc adjustment compares the two expectedness
-tails within the same date, realized side, and fixed 30-minute bucket; common
-support retains 218,905 of 222,243 tail orders. This decomposition is compatible
-with the asymmetric-liquidity account in
-[Lillo and Farmer](https://arxiv.org/abs/cond-mat/0311053) and
-[Farmer et al.](https://arxiv.org/abs/physics/0602015), but it is not causal.
-Timestamp-and-side grouping is only a parent-order proxy, initial best depth is
-not depletion or executable capacity, and the final dates were inspected by
-other project analyses.
+The post-hoc adjustment compares the two expectedness tails within the same
+date, realized side, and fixed 30-minute bucket; common support retains 218,905
+of 222,243 tail orders. Immediate response is measured from the snapshot before
+the first visible fill to the snapshot after the last visible fill, following
+the [LOBSTER row alignment](https://data.lobsterdata.com/info/DataStructure.php).
+The old size-at-least-depth proxy and the observed midpoint move disagree on
+only 23 of 1,022,374 scored orders, so move probability validates the proxy
+rather than supplying a separate effect.
+
+Expected orders move the midpoint less often and have a smaller response even
+among movers. They are slightly larger and face more opposite depth, while
+same-side depth is lower. This is best-quote asymmetry, not evidence of a broad
+depth regime or causal adaptation. Expected orders also arrive with wider
+spreads after the half-hour control, so narrow-spread composition does not
+explain the weaker response; the audit still cannot observe depth gaps beyond
+level 1. The direct response follows the immediate-impact setup of
+[Pham et al.](https://doi.org/10.1016/j.jedc.2020.103992). Its central response
+asymmetry agrees with
+[Taranto, Bormetti, and Lillo](https://doi.org/10.1088/1742-5468/2014/06/P06002),
+but the top-of-book channel differs in this TSLA sample. All intervals use
+five-date circular blocks. The analysis is post-hoc on an already inspected
+stock-year, and timestamp-and-side grouping remains only a parent-order proxy.
 
 The next-move experiment is forward-looking. Queue imbalance uses the current
 displayed sizes. OFI accumulates top-of-book changes only since the current

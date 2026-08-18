@@ -212,27 +212,37 @@ def plot_asymmetric_liquidity(
     bins: pd.DataFrame,
     path: Path | str,
 ) -> Path:
-    """Plot liquidity offered against surprising and expected visible orders."""
+    """Plot immediate response and best-quote state by order expectedness."""
 
     palette = _style()
-    figure, axes = plt.subplots(2, 2, figsize=(7.15, 5.4), layout="constrained")
+    figure, axes = plt.subplots(2, 3, figsize=(7.15, 5.2), layout="constrained")
     panels = axes.ravel()
     outcomes = [
         (
-            "penetration_probability",
-            "(a)  Best-price penetration proxy",
+            "midpoint_move_probability",
+            "(a)  Observed midpoint move",
             "Probability",
         ),
-        ("mean_log_order_size", "(b)  Reconstructed order size", r"Mean $\log V$"),
+        (
+            "mean_signed_midpoint_response_bp",
+            "(b)  Signed midpoint response",
+            "Basis points",
+        ),
+        (
+            "conditional_signed_midpoint_response_bp",
+            "(c)  Response among movers",
+            "Basis points",
+        ),
+        ("mean_log_order_size", "(d)  Order size", r"Mean $\log V$"),
         (
             "mean_log_opposite_depth",
-            "(c)  Initial opposite depth",
+            "(e)  Opposite best depth",
             r"Mean $\log Q^{opp}$",
         ),
         (
-            "mean_log_size_to_depth",
-            "(d)  Order size relative to depth",
-            r"Mean $\log(V/Q^{opp})$",
+            "mean_log_same_side_depth",
+            "(f)  Same-side best depth",
+            r"Mean $\log Q^{same}$",
         ),
     ]
     specifications = [

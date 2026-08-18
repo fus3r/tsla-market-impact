@@ -394,10 +394,22 @@ def read_visible_executions(
     executions.insert(3, "event_row", event_rows)
     executions["execution_price"] = executions.pop("price_raw") / PRICE_SCALE
     executions["trade_sign"] = -executions["resting_order_direction"]
+    executions["midpoint_twice_before_raw"] = (
+        executions["ask_price_1_before"] + executions["bid_price_1_before"]
+    )
+    after = book.iloc[event_rows].reset_index(drop=True)
+    executions["midpoint_twice_after_raw"] = (
+        after["ask_price_1"] + after["bid_price_1"]
+    )
     executions["opposite_best_size_before"] = np.where(
         executions["trade_sign"].eq(1),
         executions["ask_size_1_before"],
         executions["bid_size_1_before"],
+    )
+    executions["same_side_best_size_before"] = np.where(
+        executions["trade_sign"].eq(1),
+        executions["bid_size_1_before"],
+        executions["ask_size_1_before"],
     )
 
     price_columns = [column for column in executions if "_price_" in column]
@@ -427,8 +439,11 @@ def aggregate_visible_market_orders(executions: pd.DataFrame) -> pd.DataFrame:
         size=("size", "sum"),
         weighted_notional=("_weighted_notional", "sum"),
         mid_price_before=("mid_price_before", "first"),
+        midpoint_twice_before_raw=("midpoint_twice_before_raw", "first"),
+        midpoint_twice_after_raw=("midpoint_twice_after_raw", "last"),
         spread_before=("spread_before", "first"),
         opposite_best_size_before=("opposite_best_size_before", "first"),
+        same_side_best_size_before=("same_side_best_size_before", "first"),
     ).reset_index()
     market_orders["execution_price_vwap"] = (
         market_orders.pop("weighted_notional") / market_orders["size"]

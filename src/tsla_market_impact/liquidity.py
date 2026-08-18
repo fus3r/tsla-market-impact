@@ -16,9 +16,15 @@ ORDER_COLUMNS = [
     "date",
     "seconds",
     "first_event_row",
+    "last_event_row",
+    "execution_count",
     "trade_sign",
     "size",
+    "spread_before",
     "opposite_best_size_before",
+    "same_side_best_size_before",
+    "midpoint_twice_before_raw",
+    "midpoint_twice_after_raw",
 ]
 DEFAULT_LAG_ORDER = 50
 DEFAULT_QUANTILES = 10
@@ -30,9 +36,14 @@ SESSION_OPEN_SECONDS = 34_200
 INTRADAY_BUCKET_SECONDS = 1_800
 TAIL_METRICS = (
     "penetrated_best",
+    "midpoint_changed",
+    "signed_midpoint_response_bp",
     "log_order_size",
     "log_opposite_depth",
     "log_size_to_depth",
+    "log_same_side_depth",
+    "log_opposite_to_same_depth",
+    "log_spread",
 )
 TAIL_METRIC_INDEX = {
     metric: index for index, metric in enumerate(TAIL_METRICS, start=1)
@@ -58,13 +69,41 @@ def _validate_orders(orders: pd.DataFrame, lag_order: int) -> pd.DataFrame:
     frame = frame.sort_values(["date", "first_event_row"]).reset_index(drop=True)
     if not frame["trade_sign"].isin(SIDES).all():
         raise ValueError("Visible-order signs must be either -1 or 1")
-    numeric = frame[["seconds", "size", "opposite_best_size_before"]].to_numpy(
-        dtype=float
-    )
+    numeric_columns = [
+        "seconds",
+        "size",
+        "spread_before",
+        "opposite_best_size_before",
+        "same_side_best_size_before",
+        "midpoint_twice_before_raw",
+        "midpoint_twice_after_raw",
+    ]
+    numeric = frame[numeric_columns].to_numpy(dtype=float)
     if not np.isfinite(numeric).all():
-        raise ValueError("Order time, size, and opposite depth must be finite")
-    if frame[["size", "opposite_best_size_before"]].le(0).any(axis=None):
-        raise ValueError("Order size and opposite best depth must be positive")
+        raise ValueError("Order time, size, book state, and spread must be finite")
+    positive_columns = [
+        "size",
+        "spread_before",
+        "opposite_best_size_before",
+        "same_side_best_size_before",
+        "midpoint_twice_before_raw",
+        "midpoint_twice_after_raw",
+    ]
+    if frame[positive_columns].le(0).any(axis=None):
+        raise ValueError("Order size, book state, and spread must be positive")
+    spread_ticks = 100 * frame["spread_before"].to_numpy(dtype=float)
+    if not np.allclose(spread_ticks, np.rint(spread_ticks), atol=1e-8, rtol=0):
+        raise ValueError("Displayed spreads must be integer tick multiples")
+    midpoint_raw = frame[
+        ["midpoint_twice_before_raw", "midpoint_twice_after_raw"]
+    ].to_numpy(dtype=float)
+    if not np.array_equal(midpoint_raw, np.rint(midpoint_raw)):
+        raise ValueError("Raw twice-midpoints must be fixed-point integers")
+    event_span = frame["last_event_row"] - frame["first_event_row"] + 1
+    if frame["execution_count"].le(0).any() or event_span.lt(
+        frame["execution_count"]
+    ).any():
+        raise ValueError("Visible-fill row spans must cover every grouped execution")
     if frame["seconds"].lt(SESSION_OPEN_SECONDS).any():
         raise ValueError("Visible orders cannot precede the regular session open")
     daily_counts = frame.groupby("date", sort=True, observed=True).size()
@@ -119,6 +158,30 @@ def _score_orders(
         )
         selected["log_size_to_depth"] = (
             selected["log_order_size"] - selected["log_opposite_depth"]
+        )
+        selected["log_same_side_depth"] = np.log(
+            selected["same_side_best_size_before"]
+        )
+        selected["log_opposite_to_same_depth"] = (
+            selected["log_opposite_depth"] - selected["log_same_side_depth"]
+        )
+        selected["log_spread"] = np.log(selected["spread_before"])
+        midpoint_delta_raw = (
+            selected["midpoint_twice_after_raw"]
+            - selected["midpoint_twice_before_raw"]
+        )
+        selected["midpoint_changed"] = midpoint_delta_raw.ne(0)
+        selected["signed_midpoint_response_bp"] = (
+            10_000
+            * selected["trade_sign"]
+            * midpoint_delta_raw
+            / selected["midpoint_twice_before_raw"]
+        )
+        selected["intervening_events"] = (
+            selected["last_event_row"]
+            - selected["first_event_row"]
+            + 1
+            - selected["execution_count"]
         )
         selected["intraday_bucket"] = np.floor_divide(
             selected["seconds"] - SESSION_OPEN_SECONDS,
@@ -196,9 +259,10 @@ def _tail_statistics(
     return statistics
 
 
-def _intraday_tail_statistics(
+def _stratified_tail_statistics(
     scored: pd.DataFrame,
     quantiles: int,
+    strata: tuple[str, ...],
 ) -> tuple[np.ndarray, np.ndarray, dict[str, int | float]]:
     dates = sorted(scored["date"].unique())
     date_positions = {date: index for index, date in enumerate(dates)}
@@ -210,11 +274,13 @@ def _intraday_tail_statistics(
     overlap_strata = 0
     total_strata = 0
 
-    for (date_value, side, _), rows in tails.groupby(
-        ["date", "trade_sign", "intraday_bucket"],
+    group_columns = ["date", "trade_sign", *strata]
+    for key, rows in tails.groupby(
+        group_columns,
         sort=True,
         observed=True,
     ):
+        date_value, side = key[:2]
         total_strata += 1
         surprising = rows.loc[rows["expectedness_bin"].eq(0)]
         expected = rows.loc[rows["expectedness_bin"].eq(quantiles - 1)]
@@ -231,14 +297,68 @@ def _intraday_tail_statistics(
             numerators[date_index, side_index, metric_index] += weight * difference
 
     if (denominators.sum(axis=0) == 0).any():
-        raise ValueError("An order side has no intraday tail overlap")
+        raise ValueError("An order side has no stratified tail overlap")
     total_orders = len(tails)
     coverage: dict[str, int | float] = {
         "tail_orders": total_orders,
         "overlap_tail_orders": overlap_orders,
         "overlap_order_fraction": overlap_orders / total_orders,
-        "intraday_strata": total_strata,
-        "overlap_intraday_strata": overlap_strata,
+        "strata": total_strata,
+        "overlap_strata": overlap_strata,
+    }
+    return numerators, denominators, coverage
+
+
+def _conditional_response_statistics(
+    scored: pd.DataFrame,
+    quantiles: int,
+    strata: tuple[str, ...],
+) -> tuple[np.ndarray, np.ndarray, dict[str, int | float]]:
+    dates = sorted(scored["date"].unique())
+    date_positions = {date: index for index, date in enumerate(dates)}
+    side_positions = {side: index for index, side in enumerate(SIDES)}
+    numerators = np.zeros((len(dates), len(SIDES), 1))
+    denominators = np.zeros((len(dates), len(SIDES)))
+    movers = scored.loc[
+        scored["midpoint_changed"]
+        & scored["expectedness_bin"].isin((0, quantiles - 1))
+    ]
+    overlap_movers = 0
+    overlap_strata = 0
+    total_strata = 0
+
+    group_columns = ["date", "trade_sign", *strata]
+    for key, rows in movers.groupby(
+        group_columns,
+        sort=True,
+        observed=True,
+    ):
+        total_strata += 1
+        date_value, side = key[:2]
+        surprising = rows.loc[rows["expectedness_bin"].eq(0)]
+        expected = rows.loc[rows["expectedness_bin"].eq(quantiles - 1)]
+        if surprising.empty or expected.empty:
+            continue
+        overlap_strata += 1
+        overlap_movers += len(surprising) + len(expected)
+        weight = len(surprising) * len(expected) / len(rows)
+        difference = (
+            expected["signed_midpoint_response_bp"].mean()
+            - surprising["signed_midpoint_response_bp"].mean()
+        )
+        date_index = date_positions[date_value]
+        side_index = side_positions[side]
+        denominators[date_index, side_index] += weight
+        numerators[date_index, side_index, 0] += weight * difference
+
+    if (denominators.sum(axis=0) == 0).any():
+        raise ValueError("An order side has no conditional-response tail overlap")
+    coverage: dict[str, int | float] = {
+        "tail_movers": len(movers),
+        "overlap_tail_movers": overlap_movers,
+        "overlap_mover_fraction": overlap_movers / len(movers),
+        "strata": total_strata,
+        "overlap_strata": overlap_strata,
     }
     return numerators, denominators, coverage
 
@@ -274,7 +394,44 @@ def _contrast_interval(
     }
 
 
-def _intraday_contrast_interval(
+def _ratio_contrast_interval(
+    statistics: np.ndarray,
+    numerator_index: int,
+    denominator_index: int,
+    block_length: int,
+    replicates: int,
+    random_state: int,
+) -> dict[str, float | int]:
+    def contrast(sums: np.ndarray) -> np.ndarray:
+        means = sums[..., numerator_index] / sums[..., denominator_index]
+        return np.mean(means[..., 1] - means[..., 0], axis=-1)
+
+    totals = statistics.sum(axis=0)
+    if (totals[..., denominator_index] == 0).any():
+        raise ValueError("A side-tail cell contains no midpoint move")
+    point = float(contrast(totals))
+    indices = _circular_indices(
+        len(statistics),
+        block_length,
+        replicates,
+        random_state,
+    )
+    sampled = statistics[indices].sum(axis=1)
+    if (sampled[..., denominator_index] == 0).any():
+        raise ValueError("A bootstrap side-tail cell contains no midpoint move")
+    contrasts = contrast(sampled)
+    lower, median, upper = np.quantile(contrasts, [0.025, 0.5, 0.975])
+    return {
+        "block_length_dates": block_length,
+        "expected_minus_surprising": point,
+        "lower_95": float(lower),
+        "median": float(median),
+        "upper_95": float(upper),
+        "probability_nonnegative": float(np.mean(contrasts >= 0)),
+    }
+
+
+def _stratified_contrast_interval(
     numerators: np.ndarray,
     denominators: np.ndarray,
     metric_index: int,
@@ -371,11 +528,33 @@ def evaluate_asymmetric_liquidity(
             observations=("expectedness", "size"),
             mean_expectedness=("expectedness", "mean"),
             penetration_probability=("penetrated_best", "mean"),
+            midpoint_moves=("midpoint_changed", "sum"),
+            midpoint_move_probability=("midpoint_changed", "mean"),
+            signed_midpoint_response_sum_bp=(
+                "signed_midpoint_response_bp",
+                "sum",
+            ),
+            mean_signed_midpoint_response_bp=(
+                "signed_midpoint_response_bp",
+                "mean",
+            ),
             mean_log_order_size=("log_order_size", "mean"),
             mean_log_opposite_depth=("log_opposite_depth", "mean"),
             mean_log_size_to_depth=("log_size_to_depth", "mean"),
+            mean_log_same_side_depth=("log_same_side_depth", "mean"),
+            mean_log_opposite_to_same_depth=(
+                "log_opposite_to_same_depth",
+                "mean",
+            ),
+            mean_spread=("spread_before", "mean"),
+            mean_log_spread=("log_spread", "mean"),
         )
         .reset_index()
+    )
+    if bins["midpoint_moves"].eq(0).any():
+        raise ValueError("Every expectedness bin must contain a midpoint move")
+    bins["conditional_signed_midpoint_response_bp"] = (
+        bins["signed_midpoint_response_sum_bp"] / bins["midpoint_moves"]
     )
     bins["side"] = bins["trade_sign"].map({-1: "sell", 1: "buy"})
     bins = bins[
@@ -386,9 +565,17 @@ def evaluate_asymmetric_liquidity(
             "observations",
             "mean_expectedness",
             "penetration_probability",
+            "midpoint_moves",
+            "midpoint_move_probability",
+            "mean_signed_midpoint_response_bp",
+            "conditional_signed_midpoint_response_bp",
             "mean_log_order_size",
             "mean_log_opposite_depth",
             "mean_log_size_to_depth",
+            "mean_log_same_side_depth",
+            "mean_log_opposite_to_same_depth",
+            "mean_spread",
+            "mean_log_spread",
         ]
     ]
 
@@ -416,52 +603,83 @@ def evaluate_asymmetric_liquidity(
         for block_length in block_lengths
     ]
     tail_statistics = _tail_statistics(scored_test, quantiles)
-    penetration_intervals = [
-        _contrast_interval(
+
+    def metric_intervals(
+        statistics: np.ndarray,
+        metric: str,
+        seed_offset: int,
+    ) -> list[dict[str, float | int]]:
+        return [
+            _contrast_interval(
+                statistics,
+                TAIL_METRIC_INDEX[metric],
+                block_length,
+                bootstrap_replicates,
+                random_state + seed_offset + block_length,
+            )
+            for block_length in block_lengths
+        ]
+
+    def conditional_response_intervals(
+        statistics: np.ndarray,
+        seed_offset: int,
+    ) -> list[dict[str, float | int]]:
+        return [
+            _ratio_contrast_interval(
+                statistics,
+                TAIL_METRIC_INDEX["signed_midpoint_response_bp"],
+                TAIL_METRIC_INDEX["midpoint_changed"],
+                block_length,
+                bootstrap_replicates,
+                random_state + seed_offset + block_length,
+            )
+            for block_length in block_lengths
+        ]
+
+    raw_intervals = {
+        "penetrated_best": metric_intervals(
             tail_statistics,
-            TAIL_METRIC_INDEX["penetrated_best"],
-            block_length,
-            bootstrap_replicates,
-            random_state + 100 + block_length,
-        )
-        for block_length in block_lengths
-    ]
-    order_size_intervals = [
-        _contrast_interval(
-            tail_statistics,
-            TAIL_METRIC_INDEX["log_order_size"],
-            block_length,
-            bootstrap_replicates,
-            random_state + 200 + block_length,
-        )
-        for block_length in block_lengths
-    ]
-    opposite_depth_intervals = [
-        _contrast_interval(
-            tail_statistics,
-            TAIL_METRIC_INDEX["log_opposite_depth"],
-            block_length,
-            bootstrap_replicates,
-            random_state + 200 + block_length,
-        )
-        for block_length in block_lengths
-    ]
-    relative_liquidity_intervals = [
-        _contrast_interval(
-            tail_statistics,
-            TAIL_METRIC_INDEX["log_size_to_depth"],
-            block_length,
-            bootstrap_replicates,
-            random_state + 200 + block_length,
-        )
-        for block_length in block_lengths
-    ]
+            "penetrated_best",
+            100,
+        ),
+        **{
+            metric: metric_intervals(tail_statistics, metric, 200)
+            for metric in (
+                "log_order_size",
+                "log_opposite_depth",
+                "log_size_to_depth",
+                "log_same_side_depth",
+                "log_opposite_to_same_depth",
+                "log_spread",
+            )
+        },
+        **{
+            metric: metric_intervals(tail_statistics, metric, 400)
+            for metric in (
+                "midpoint_changed",
+                "signed_midpoint_response_bp",
+            )
+        },
+        "conditional_signed_midpoint_response_bp": (
+            conditional_response_intervals(tail_statistics, 400)
+        ),
+    }
+
     intraday_numerators, intraday_denominators, intraday_coverage = (
-        _intraday_tail_statistics(scored_test, quantiles)
+        _stratified_tail_statistics(
+            scored_test,
+            quantiles,
+            ("intraday_bucket",),
+        )
+    )
+    intraday_conditional = _conditional_response_statistics(
+        scored_test,
+        quantiles,
+        ("intraday_bucket",),
     )
     intraday_intervals = {
         metric: [
-            _intraday_contrast_interval(
+            _stratified_contrast_interval(
                 intraday_numerators,
                 intraday_denominators,
                 metric_index,
@@ -473,6 +691,18 @@ def evaluate_asymmetric_liquidity(
         ]
         for metric_index, metric in enumerate(TAIL_METRICS)
     }
+    intraday_conditional_intervals = [
+        _stratified_contrast_interval(
+            intraday_conditional[0],
+            intraday_conditional[1],
+            0,
+            block_length,
+            bootstrap_replicates,
+            random_state + 300 + block_length,
+        )
+        for block_length in block_lengths
+    ]
+
     primary_block = 5 if 5 in block_lengths else block_lengths[0]
     primary_prediction = next(
         row
@@ -481,6 +711,15 @@ def evaluate_asymmetric_liquidity(
     )
     if primary_prediction["relative_mse_reduction"] <= 0:
         raise ValueError("Sign-prediction gate failed on the fixed test dates")
+
+    proxy = scored_test["penetrated_best"].to_numpy(dtype=bool)
+    observed_move = scored_test["midpoint_changed"].to_numpy(dtype=bool)
+    true_positive = int(np.sum(proxy & observed_move))
+    false_positive = int(np.sum(proxy & ~observed_move))
+    false_negative = int(np.sum(~proxy & observed_move))
+    true_negative = int(np.sum(~proxy & ~observed_move))
+    intervening_groups = int(scored_test["intervening_events"].gt(0).sum())
+    adverse_responses = int(scored_test["signed_midpoint_response_bp"].lt(0).sum())
 
     result: dict[str, object] = {
         "protocol": {
@@ -497,6 +736,19 @@ def evaluate_asymmetric_liquidity(
             "liquidity_decomposition": (
                 "log order size minus log initial opposite best depth"
             ),
+            "best_quote_asymmetry": (
+                "log initial opposite best depth minus log initial same-side "
+                "best depth"
+            ),
+            "immediate_response": (
+                "signed midpoint change from the snapshot before first_event_row "
+                "to the snapshot after last_event_row; the move indicator uses "
+                "the exact fixed-point twice-midpoint difference"
+            ),
+            "primary_post_hoc_endpoint": (
+                "most-expected minus most-surprising mean signed immediate "
+                "midpoint response in basis points"
+            ),
             "intraday_control": (
                 "post-hoc date, realised side, and fixed 30-minute session "
                 "bucket effects; no bucket-width search"
@@ -505,7 +757,8 @@ def evaluate_asymmetric_liquidity(
             "bootstrap_replicates": bootstrap_replicates,
             "test_status": (
                 "chronological for this model; dates were inspected by other "
-                "project analyses"
+                "project analyses, and the response and depth falsifications "
+                "were selected after the original liquidity result"
             ),
         },
         "scope": {
@@ -517,6 +770,11 @@ def evaluate_asymmetric_liquidity(
             "test_dates": int(test["date"].nunique()),
             "train_scored_orders": train_observations,
             "test_scored_orders": len(scored_test),
+            "test_groups_with_intervening_events": intervening_groups,
+            "test_groups_with_intervening_events_fraction": (
+                intervening_groups / len(scored_test)
+            ),
+            "test_adverse_signed_responses": adverse_responses,
         },
         "sign_prediction": {
             "training_mean_sign": train_mean,
@@ -536,10 +794,42 @@ def evaluate_asymmetric_liquidity(
         "liquidity_response": {
             "comparison": "most expected minus most surprising train-defined bin",
             "side_standardisation": "equal weight to buys and sells",
-            "penetration_probability_contrast": penetration_intervals,
-            "mean_log_order_size_contrast": order_size_intervals,
-            "mean_log_opposite_depth_contrast": opposite_depth_intervals,
-            "mean_log_size_to_depth_contrast": relative_liquidity_intervals,
+            "penetration_probability_contrast": raw_intervals["penetrated_best"],
+            "midpoint_move_audit": {
+                "true_positive": true_positive,
+                "false_positive": false_positive,
+                "false_negative": false_negative,
+                "true_negative": true_negative,
+                "proxy_precision": true_positive / (true_positive + false_positive),
+                "proxy_recall": true_positive / (true_positive + false_negative),
+                "interpretation": (
+                    "observed midpoint moves validate the penetration proxy; "
+                    "they are not an independent outcome family"
+                ),
+            },
+            "midpoint_move_probability_contrast": raw_intervals[
+                "midpoint_changed"
+            ],
+            "mean_signed_midpoint_response_bp_contrast": raw_intervals[
+                "signed_midpoint_response_bp"
+            ],
+            "conditional_signed_midpoint_response_bp_contrast": raw_intervals[
+                "conditional_signed_midpoint_response_bp"
+            ],
+            "mean_log_order_size_contrast": raw_intervals["log_order_size"],
+            "mean_log_opposite_depth_contrast": raw_intervals[
+                "log_opposite_depth"
+            ],
+            "mean_log_size_to_depth_contrast": raw_intervals[
+                "log_size_to_depth"
+            ],
+            "mean_log_same_side_depth_contrast": raw_intervals[
+                "log_same_side_depth"
+            ],
+            "mean_log_opposite_to_same_depth_contrast": raw_intervals[
+                "log_opposite_to_same_depth"
+            ],
+            "mean_log_spread_contrast": raw_intervals["log_spread"],
             "intraday_adjusted": {
                 "method": (
                     "within-stratum tail differences weighted by "
@@ -561,6 +851,23 @@ def evaluate_asymmetric_liquidity(
                 "mean_log_size_to_depth_contrast": intraday_intervals[
                     "log_size_to_depth"
                 ],
+                "mean_log_same_side_depth_contrast": intraday_intervals[
+                    "log_same_side_depth"
+                ],
+                "mean_log_opposite_to_same_depth_contrast": intraday_intervals[
+                    "log_opposite_to_same_depth"
+                ],
+                "mean_log_spread_contrast": intraday_intervals["log_spread"],
+                "midpoint_move_probability_contrast": intraday_intervals[
+                    "midpoint_changed"
+                ],
+                "mean_signed_midpoint_response_bp_contrast": intraday_intervals[
+                    "signed_midpoint_response_bp"
+                ],
+                "conditional_signed_midpoint_response_bp_contrast": (
+                    intraday_conditional_intervals
+                ),
+                "conditional_response_coverage": intraday_conditional[2],
             },
             "train_quantile_edges_by_sign": quantile_edges,
         },
